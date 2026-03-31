@@ -1,0 +1,65 @@
+services:
+  - type: web
+    name: eval-mcp-api
+    env: python
+    buildCommand: pip install .
+    preDeployCommand: eval-mcp migrate
+    startCommand: eval-mcp api --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: EVAL_MCP_API_KEY
+        sync: false
+      - key: EVAL_MCP_API_KEYS
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ENVIRONMENT
+        value: production
+      - key: QUEUE_BACKEND
+        value: database_polling
+      - key: WORKER_POLL_INTERVAL_SECONDS
+        value: "1.0"
+      - key: WORKER_MAX_RETRIES
+        value: "2"
+      - key: STORAGE_PROVIDER
+        value: local
+      - key: LOCAL_ARTIFACT_DIRECTORY
+        value: ./.artifacts
+      - key: DEFAULT_MODEL_PROVIDER
+        value: stub
+      - key: DEFAULT_MODEL_NAME
+        value: stub-evaluator
+      - key: API_HOST
+        value: 0.0.0.0
+
+  - type: worker
+    name: eval-mcp-worker
+    env: python
+    buildCommand: pip install .
+    startCommand: eval-mcp worker
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: EVAL_MCP_API_KEY
+        sync: false
+      - key: EVAL_MCP_API_KEYS
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ENVIRONMENT
+        value: production
+      - key: QUEUE_BACKEND
+        value: database_polling
+      - key: WORKER_POLL_INTERVAL_SECONDS
+        value: "1.0"
+      - key: WORKER_MAX_RETRIES
+        value: "2"
+      - key: STORAGE_PROVIDER
+        value: local
+      - key: LOCAL_ARTIFACT_DIRECTORY
+        value: ./.artifacts
+      - key: DEFAULT_MODEL_PROVIDER
+        value: stub
+      - key: DEFAULT_MODEL_NAME
+        value: stub-evaluator
