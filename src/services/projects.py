@@ -31,7 +31,7 @@ class ProjectService:
         self.session = session
         self.projects = ProjectsRepository(session)
 
-    async def create_project(self, request: ProjectCreate) -> ProjectRead:
+    async def create_project(self, request: ProjectCreate, *, owner_client_id: str | None = None) -> ProjectRead:
         slug = request.slug or _slugify(request.name)
         existing = await self.projects.get_by_identifier(slug)
         if existing is not None and existing.slug == slug:
@@ -41,6 +41,7 @@ class ProjectService:
             name=request.name,
             description=request.description,
             created_by=request.created_by,
+            owner_client_id=owner_client_id,
         )
         return _to_project_read(project)
 
@@ -56,4 +57,3 @@ class ProjectService:
     async def list_projects(self) -> list[ProjectRead]:
         projects = await self.projects.list()
         return [_to_project_read(project) for project in projects]
-

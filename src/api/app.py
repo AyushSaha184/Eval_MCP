@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from api.dependencies import require_api_key
 from core.config import get_settings
 from core.logging import setup_logging
+from api.routes.auth import router as auth_router
 from api.routes.projects import router as projects_router
 from api.routes.runs import router as runs_router
 from api.routes.v1 import router as v1_router
@@ -19,8 +19,9 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(EvalMCPError)
     async def handle_eval_mcp_error(_, exc: EvalMCPError) -> JSONResponse:
+        status_code = 401 if exc.code == "unauthorized" else 400
         return JSONResponse(
-            status_code=400,
+            status_code=status_code,
             content={
                 "ok": False,
                 "code": exc.code,
@@ -35,7 +36,8 @@ def create_app() -> FastAPI:
 
     app.include_router(projects_router)
     app.include_router(runs_router)
-    app.include_router(v1_router, dependencies=[Depends(require_api_key)])
+    app.include_router(auth_router)
+    app.include_router(v1_router)
 
     return app
 

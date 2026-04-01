@@ -13,6 +13,12 @@ from domain.enums import ArtifactType, CaseResultStatus, MetricDirection, RunSta
 class Project(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "projects"
 
+    owner_client_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("clients.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -23,6 +29,7 @@ class Project(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     created_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
+    owner_client: Mapped["Client | None"] = relationship(back_populates="projects")
     prompts: Mapped[list["Prompt"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     datasets: Mapped[list["Dataset"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     eval_runs: Mapped[list["EvalRun"]] = relationship(
@@ -30,6 +37,50 @@ class Project(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         cascade="all, delete-orphan",
         foreign_keys="EvalRun.project_id",
     )
+
+
+class Client(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "clients"
+
+    account_identifier: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    onboarding_token_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    projects: Mapped[list[Project]] = relationship(back_populates="owner_client")
+    api_keys: Mapped[list["ClientApiKey"]] = relationship(
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+
+
+class ClientApiKey(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "client_api_keys"
+    __table_args__ = (
+        Index("ix_client_api_keys_client_project_active", "client_id", "project_id", "is_active"),
+    )
+
+    client_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("clients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    label: Mapped[str] = mapped_column(String(120), nullable=False, default="default")
+    key_prefix: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    client: Mapped[Client] = relationship(back_populates="api_keys")
+    project: Mapped[Project] = relationship()
 
 
 class Prompt(Base, UUIDPrimaryKeyMixin, TimestampMixin):

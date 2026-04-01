@@ -140,6 +140,60 @@ It does not:
 - connect directly to PostgreSQL
 - replace the backend API or worker
 
+### Hosted Self-Serve Onboarding (CLI First)
+
+For hosted usage, onboarding is CLI first and API-key based.
+
+1. Register once:
+
+```bash
+eval-mcp register --email you@example.com --display-name "Your Name"
+```
+
+2. Create a project-scoped API key:
+
+```bash
+eval-mcp create-api-key --label "cursor-laptop"
+```
+
+If you want another hosted project later:
+
+```bash
+eval-mcp create-project --name "Team Project"
+eval-mcp create-api-key --project team-project --label "team-project-key"
+```
+
+3. Paste the returned key into your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "eval-mcp": {
+      "command": "uvx",
+      "args": ["eval-mcp", "serve"],
+      "env": {
+        "EVAL_MCP_API_URL": "https://your-backend.example.com",
+        "EVAL_MCP_API_KEY": "emcp_xxxxxxxx_your_generated_secret"
+      }
+    }
+  }
+}
+```
+
+4. Verify identity and scope:
+
+```bash
+eval-mcp whoami
+```
+
+Notes:
+
+- API keys are shown once only at creation time.
+- Backend stores only hashed keys.
+- The onboarding token is one-time and is consumed when the first API key is created.
+- Daily MCP usage does not require repeated login.
+- A lightweight local file (`~/.eval_mcp/config.json`) is used only to help CLI onboarding commands and CLI identity checks.
+
 ## 4. Claude Desktop / Cursor Config
 
 Use config like this:
@@ -470,6 +524,12 @@ eval-mcp api
 eval-mcp worker
 eval-mcp dashboard
 eval-mcp migrate
+eval-mcp register
+eval-mcp create-api-key
+eval-mcp create-project
+eval-mcp whoami
+eval-mcp list-api-keys
+eval-mcp revoke-api-key <key_id>
 ```
 
 Meaning:
@@ -485,6 +545,21 @@ Meaning:
   - starts read-only dashboard
 - `eval-mcp migrate`
   - runs Alembic migrations
+- `eval-mcp register`
+  - one-time hosted registration
+  - creates a client account (or reuses it) and ensures one default project
+- `eval-mcp create-api-key`
+  - creates a DB-backed project-scoped API key
+  - prints raw key once and a ready MCP config snippet
+- `eval-mcp create-project`
+  - creates an additional hosted project for the current account
+  - intended for users who want more than the default project created at registration
+- `eval-mcp whoami`
+  - validates configured API key and prints current scope
+- `eval-mcp list-api-keys`
+  - optional key inventory for the current account
+- `eval-mcp revoke-api-key`
+  - optional key revocation by id
 
 ## 9. Self-Hosted / Operator Guide
 
@@ -562,6 +637,8 @@ EVAL_MCP_DEFAULT_PROJECT
 DATABASE_URL
 EVAL_MCP_API_KEY
 EVAL_MCP_API_KEYS
+EVAL_MCP_TIMEOUT_SECONDS
+EVAL_MCP_DEFAULT_PROJECT
 LOG_LEVEL
 QUEUE_BACKEND
 REDIS_URL
@@ -598,6 +675,13 @@ DASHBOARD_PORT
 The installable MCP package calls these backend routes:
 
 ```text
+POST /v1/auth/register
+POST /v1/auth/api-keys
+POST /v1/auth/api-keys/current
+POST /v1/auth/projects
+GET  /v1/auth/whoami
+GET  /v1/auth/api-keys
+POST /v1/auth/api-keys/{key_id}/revoke
 GET  /v1/projects
 GET  /v1/projects/{project}/datasets
 GET  /v1/projects/{project}/prompts
@@ -614,6 +698,13 @@ POST /v1/runs/annotate
 POST /v1/suggestions
 GET  /v1/meta/supported-metrics
 ```
+
+Project isolation rules:
+
+- DB-backed API keys are scoped to one project.
+- Project-scoped requests must be for the authenticated project.
+- Run-scoped requests must reference runs belonging to the authenticated project.
+- Legacy env-based keys remain available for compatibility and act as admin keys.
 
 ## 12. Docker
 
@@ -712,3 +803,5 @@ Covered areas include:
 - VS Code uses `.vscode/mcp.json`
 - Claude Code uses `.mcp.json`
 - Codex uses `~/.codex/config.toml`
+- existing MCP tool names and payload contracts are preserved
+- env-based `EVAL_MCP_API_KEY` / `EVAL_MCP_API_KEYS` auth still works as backward-compatible fallback

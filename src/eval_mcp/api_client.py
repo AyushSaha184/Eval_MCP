@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from eval_mcp.config import MCPClientSettings, get_mcp_settings
+from eval_mcp.local_config import load_local_config
 
 
 class EvalMCPAPIError(RuntimeError):
@@ -23,9 +24,11 @@ class EvalMCPAPIClient:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.settings = settings or get_mcp_settings()
+        local_cfg = load_local_config()
         headers: dict[str, str] = {}
-        if self.settings.api_key:
-            headers["x-api-key"] = self.settings.api_key
+        effective_api_key = self.settings.api_key or local_cfg.get("api_key")
+        if effective_api_key:
+            headers["x-api-key"] = effective_api_key
         self._client = httpx.AsyncClient(
             base_url=self.settings.api_url.rstrip("/"),
             timeout=self.settings.timeout_seconds,
@@ -74,6 +77,27 @@ class EvalMCPAPIClient:
 
     async def list_projects(self) -> dict:
         return await self._request("GET", "/v1/projects")
+
+    async def register_client(self, request: dict) -> dict:
+        return await self._request("POST", "/v1/auth/register", json=request)
+
+    async def create_api_key(self, request: dict) -> dict:
+        return await self._request("POST", "/v1/auth/api-keys", json=request)
+
+    async def create_api_key_for_current_client(self, request: dict) -> dict:
+        return await self._request("POST", "/v1/auth/api-keys/current", json=request)
+
+    async def create_project_for_current_client(self, request: dict) -> dict:
+        return await self._request("POST", "/v1/auth/projects", json=request)
+
+    async def whoami(self) -> dict:
+        return await self._request("GET", "/v1/auth/whoami")
+
+    async def list_api_keys(self) -> dict:
+        return await self._request("GET", "/v1/auth/api-keys")
+
+    async def revoke_api_key(self, key_id: str) -> dict:
+        return await self._request("POST", f"/v1/auth/api-keys/{key_id}/revoke")
 
     async def list_datasets(self, project: str) -> dict:
         return await self._request("GET", f"/v1/projects/{project}/datasets")

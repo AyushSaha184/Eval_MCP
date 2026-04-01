@@ -453,3 +453,67 @@ class InternalRunSnapshot(EvalBaseModel):
     model_config_snapshot: JSONDict = Field(default_factory=dict)
     retriever_config_snapshot: JSONDict = Field(default_factory=dict)
     runtime_config_snapshot: JSONDict = Field(default_factory=dict)
+
+
+class RegisterClientRequest(EvalBaseModel):
+    identifier: str = Field(min_length=1, max_length=255)
+    display_name: str | None = Field(default=None, max_length=255)
+
+
+class RegisterClientResponse(EvalBaseModel):
+    client_id: str
+    identifier: str
+    display_name: str | None = None
+    project_id: str
+    project_slug: str
+    onboarding_token: str
+    created: bool
+
+
+class CreateApiKeyRequest(EvalBaseModel):
+    identifier: str = Field(min_length=1, max_length=255)
+    onboarding_token: str = Field(min_length=1)
+    label: str | None = Field(default=None, max_length=120)
+    project: str | None = None
+
+
+class CreateApiKeyResponse(EvalBaseModel):
+    key_id: str
+    key_prefix: str
+    api_key: str
+    client_id: str
+    identifier: str
+    project_id: str
+    project_slug: str
+    label: str
+
+
+class CreateScopedApiKeyRequest(EvalBaseModel):
+    label: str | None = Field(default=None, max_length=120)
+    project: str | None = None
+
+
+class HostedProjectCreateRequest(EvalBaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    slug: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = None
+
+
+class WhoAmIResponse(EvalBaseModel):
+    mode: str
+    client_id: str | None = None
+    identifier: str | None = None
+    project_id: str | None = None
+    project_slug: str | None = None
+    key_id: str | None = None
+    key_prefix: str | None = None
+
+
+class ApiKeyListItem(EvalBaseModel):
+    id: str
+    label: str
+    key_prefix: str
+    is_active: bool
+    created_at: datetime
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None

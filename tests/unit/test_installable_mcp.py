@@ -18,8 +18,21 @@ from eval_mcp.tool_handlers import get_run_status, register_golden_dataset
 def test_cli_parser_supports_required_commands() -> None:
     parser = build_parser()
 
-    for command in ("serve", "api", "worker", "dashboard", "migrate"):
-        parsed = parser.parse_args([command])
+    command_args = {
+        "serve": [],
+        "api": [],
+        "worker": [],
+        "dashboard": [],
+        "migrate": [],
+        "register": ["--identifier", "user@example.com"],
+        "create-api-key": ["--identifier", "user@example.com", "--onboarding-token", "token"],
+        "create-project": ["--name", "Hosted Project"],
+        "whoami": [],
+        "list-api-keys": [],
+        "revoke-api-key": ["key_123"],
+    }
+    for command, extra_args in command_args.items():
+        parsed = parser.parse_args([command, *extra_args])
         assert parsed.command == command
 
 

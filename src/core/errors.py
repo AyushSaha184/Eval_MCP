@@ -34,6 +34,10 @@ class ConflictError(EvalMCPError):
     default_code = "conflict"
 
 
+class UnauthorizedError(EvalMCPError):
+    default_code = "unauthorized"
+
+
 class BackendError(EvalMCPError):
     default_code = "backend_error"
 
