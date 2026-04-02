@@ -7,7 +7,7 @@ from db.repositories.metrics import MetricsRepository
 from db.repositories.runs import RunsRepository
 from db.repositories.suggestions import SuggestionsRepository
 from domain.schemas import SuggestFixRequest, SuggestionResponse
-from eval_backends.judges.anthropic_judge import AnthropicJudgeRunner
+from eval_backends.judges.google_judge import GoogleJudgeRunner
 from services.clustering import ClusteringService
 
 
@@ -18,7 +18,7 @@ class SuggestionService:
         self.metrics = MetricsRepository(session)
         self.suggestions = SuggestionsRepository(session)
         self.clustering = ClusteringService()
-        self.judge = AnthropicJudgeRunner()
+        self.judge = GoogleJudgeRunner()
 
     async def suggest_fix(self, request: SuggestFixRequest) -> SuggestionResponse:
         run = await self.runs.get_by_public_id(request.run_id)
@@ -35,14 +35,14 @@ class SuggestionService:
             run_id=run.run_id,
             failure_clusters=[cluster.model_dump(mode="json") for cluster in clusters],
             sample_inputs=[bundle["case_result"].input_text_snapshot for bundle in case_bundles[:3]],
-            model_name=request.model_name or "anthropic-stub-judge",
+            model_name=request.model_name or "gemini-2.5-flash",
         )
         suggestion = await self.suggestions.create(
             run_id=run.id,
             summary=judge_result.summary,
             suggestion_text=judge_result.suggestion_text,
             failure_clusters_json=[cluster.model_dump(mode="json") for cluster in clusters],
-            model_name=request.model_name or "anthropic-stub-judge",
+            model_name=request.model_name or "gemini-2.5-flash",
             metadata_json=judge_result.metadata,
         )
         return SuggestionResponse(
@@ -54,4 +54,3 @@ class SuggestionService:
             model_name=suggestion.model_name,
             created_at=suggestion.created_at,
         )
-

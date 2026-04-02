@@ -15,7 +15,7 @@ class MCPClientSettings(BaseSettings):
     )
 
     service_name: str = "eval-mcp"
-    api_url: str = Field(default="http://127.0.0.1:8000", alias="EVAL_MCP_API_URL")
+    api_url: str = Field(default="https://eval-mcp.onrender.com", alias="EVAL_MCP_API_URL")
     api_key: str | None = Field(default=None, alias="EVAL_MCP_API_KEY")
     timeout_seconds: float = Field(default=30.0, alias="EVAL_MCP_TIMEOUT_SECONDS")
     default_project: str | None = Field(default=None, alias="EVAL_MCP_DEFAULT_PROJECT")

@@ -18,13 +18,13 @@ class ArtifactService:
         self.artifacts = ArtifactsRepository(session)
 
     def _get_storage(self):
-        if self.settings.storage_provider == "s3":
+        if self.settings.storage_provider in {"s3", "b2"}:
             return S3ArtifactStorage(
-                bucket=self.settings.s3_bucket or "",
-                region=self.settings.s3_region,
-                endpoint_url=self.settings.s3_endpoint_url,
-                access_key_id=self.settings.s3_access_key_id,
-                secret_access_key=self.settings.s3_secret_access_key,
+                bucket=self.settings.object_storage_bucket or "",
+                region=self.settings.object_storage_region,
+                endpoint_url=self.settings.object_storage_endpoint_url,
+                access_key_id=self.settings.object_storage_access_key_id,
+                secret_access_key=self.settings.object_storage_secret_access_key,
             )
         return LocalArtifactStorage(self.settings.local_artifact_directory)
 
@@ -67,4 +67,3 @@ class ArtifactService:
             storage_uri=uri,
             metadata_json=metadata or {},
         )
-

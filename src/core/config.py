@@ -32,7 +32,7 @@ class Settings(BaseSettings):
         alias="WORKER_POLL_INTERVAL_SECONDS",
     )
     worker_max_retries: int = Field(default=2, alias="WORKER_MAX_RETRIES")
-    storage_provider: Literal["local", "s3"] = Field(
+    storage_provider: Literal["local", "s3", "b2"] = Field(
         default="local",
         alias="STORAGE_PROVIDER",
     )
@@ -48,6 +48,9 @@ class Settings(BaseSettings):
         default="stub-evaluator",
         alias="DEFAULT_MODEL_NAME",
     )
+    google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
+    google_ai_studio_api_key: str | None = Field(default=None, alias="GOOGLE_AI_STUDIO_API_KEY")
+    google_api_base: str = Field(default="https://generativelanguage.googleapis.com", alias="GOOGLE_API_BASE")
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     anthropic_api_base: str = Field(default="https://api.anthropic.com", alias="ANTHROPIC_API_BASE")
     anthropic_api_version: str = Field(default="2023-06-01", alias="ANTHROPIC_API_VERSION")
@@ -66,6 +69,11 @@ class Settings(BaseSettings):
         default=None,
         alias="S3_SECRET_ACCESS_KEY",
     )
+    b2_bucket: str | None = Field(default=None, alias="B2_BUCKET")
+    b2_region: str | None = Field(default=None, alias="B2_REGION")
+    b2_endpoint_url: str | None = Field(default=None, alias="B2_ENDPOINT_URL")
+    b2_key_id: str | None = Field(default=None, alias="B2_KEY_ID")
+    b2_application_key: str | None = Field(default=None, alias="B2_APPLICATION_KEY")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     mcp_transport: Literal["stdio"] = Field(default="stdio", alias="MCP_TRANSPORT")
     api_host: str = Field(default="127.0.0.1", alias="API_HOST")
@@ -95,6 +103,40 @@ class Settings(BaseSettings):
                 seen.add(key)
                 deduped.append(key)
         return deduped
+
+    @property
+    def object_storage_bucket(self) -> str | None:
+        if self.storage_provider == "b2":
+            return self.b2_bucket or self.s3_bucket
+        return self.s3_bucket
+
+    @property
+    def object_storage_region(self) -> str | None:
+        if self.storage_provider == "b2":
+            return self.b2_region or self.s3_region
+        return self.s3_region
+
+    @property
+    def object_storage_endpoint_url(self) -> str | None:
+        if self.storage_provider == "b2":
+            return self.b2_endpoint_url or self.s3_endpoint_url
+        return self.s3_endpoint_url
+
+    @property
+    def object_storage_access_key_id(self) -> str | None:
+        if self.storage_provider == "b2":
+            return self.b2_key_id or self.s3_access_key_id
+        return self.s3_access_key_id
+
+    @property
+    def object_storage_secret_access_key(self) -> str | None:
+        if self.storage_provider == "b2":
+            return self.b2_application_key or self.s3_secret_access_key
+        return self.s3_secret_access_key
+
+    @property
+    def effective_google_api_key(self) -> str | None:
+        return self.google_ai_studio_api_key or self.google_api_key
 
 
 @lru_cache(maxsize=1)

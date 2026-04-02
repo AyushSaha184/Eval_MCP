@@ -14,9 +14,10 @@ COPY pyproject.toml README.MD alembic.ini ./
 COPY prompts ./prompts
 COPY scripts ./scripts
 COPY src ./src
-COPY server.py ./
 
 RUN pip install --upgrade pip \
-    && pip install .
+    && pip install ".[s3]"
 
-CMD ["eval-mcp", "api"]
+EXPOSE 8000
+
+CMD ["eval-mcp", "api", "--host", "0.0.0.0", "--port", "8000"]

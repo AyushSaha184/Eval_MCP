@@ -64,6 +64,14 @@ class LLMRunner:
                 runtime_config=runtime_config,
                 retrieved_context=retrieved_context or [],
             )
+        if provider in {"google", "gemini"}:
+            return await self._generate_google(
+                prompt_snapshot=prompt_snapshot,
+                input_text=input_text,
+                model_config=model_config,
+                runtime_config=runtime_config,
+                retrieved_context=retrieved_context or [],
+            )
         raise BackendError(
             message=f"Model provider `{provider}` is not implemented yet.",
             details={"provider": provider},
@@ -234,6 +242,79 @@ class LLMRunner:
             },
             retrieved_context=retrieved_context,
             metadata={"provider": "anthropic", "model": payload["model"], "runtime": runtime_config},
+        )
+
+    async def _generate_google(
+        self,
+        *,
+        prompt_snapshot: dict[str, Any],
+        input_text: str,
+        model_config: dict[str, Any],
+        runtime_config: dict[str, Any],
+        retrieved_context: list[str],
+    ) -> GenerationResult:
+        api_key = self.settings.effective_google_api_key
+        if not api_key:
+            raise BackendError(
+                "GOOGLE_AI_STUDIO_API_KEY or GOOGLE_API_KEY is required for provider `google`.",
+                details={"provider": "google"},
+            )
+        system_prompt, rendered_prompt = self._build_messages(
+            prompt_snapshot=prompt_snapshot,
+            input_text=input_text,
+            retrieved_context=retrieved_context,
+        )
+        user_parts: list[dict[str, Any]] = []
+        if system_prompt:
+            user_parts.append({"text": f"System instructions:\n{system_prompt}"})
+        user_parts.append({"text": rendered_prompt})
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": user_parts,
+                }
+            ],
+            "generationConfig": {
+                "temperature": model_config.get("temperature", 0.0),
+                "maxOutputTokens": model_config.get("max_tokens", 512),
+            },
+        }
+        start = time.perf_counter()
+        model_name = model_config.get("model_name", self.settings.default_model_name)
+        async with httpx.AsyncClient(
+            base_url=self.settings.google_api_base.rstrip("/"),
+            timeout=self.settings.model_request_timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                f"/v1beta/models/{model_name}:generateContent",
+                params={"key": api_key},
+                json=payload,
+            )
+        if response.is_error:
+            raise BackendError(
+                "Google generation request failed.",
+                details={"status_code": response.status_code, "body": response.text[:500]},
+            )
+        data = response.json()
+        candidates = data.get("candidates") or []
+        parts = []
+        if candidates:
+            parts = ((candidates[0].get("content") or {}).get("parts")) or []
+        output_text = "".join(part.get("text", "") for part in parts if isinstance(part, dict))
+        usage = data.get("usageMetadata") or {}
+        return GenerationResult(
+            output_text=output_text.strip(),
+            rendered_prompt=rendered_prompt,
+            latency_ms=int((time.perf_counter() - start) * 1000),
+            token_usage={
+                "prompt_tokens": usage.get("promptTokenCount", 0),
+                "completion_tokens": usage.get("candidatesTokenCount", 0),
+                "total_tokens": usage.get("totalTokenCount", 0),
+            },
+            retrieved_context=retrieved_context,
+            metadata={"provider": "google", "model": model_name, "runtime": runtime_config},
         )
 
     def _stub_output(
