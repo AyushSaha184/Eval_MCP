@@ -60,3 +60,10 @@ class CachingService:
             run_type=run_type,
         )
 
+    async def find_inflight_run(self, *, project_id: str, cache_key: str, run_type):
+        return await self.runs.find_cached_inflight(
+            project_id=project_id,
+            cache_key=cache_key,
+            run_type=run_type,
+        )
+

@@ -4,6 +4,7 @@ from core.errors import RunExecutionError
 from domain.enums import RunType
 from workers.executors.prompt_eval import PromptEvalExecutor
 from workers.executors.rag_eval import RAGEvalExecutor
+from workers.executors.suggestion_eval import SuggestionEvalExecutor
 
 
 class RunDispatcher:
@@ -16,6 +17,9 @@ class RunDispatcher:
             return
         if run.run_type == RunType.RAG_EVAL:
             await RAGEvalExecutor(self.session).execute(run)
+            return
+        if run.run_type == RunType.SUGGESTION_EVAL:
+            await SuggestionEvalExecutor(self.session).execute(run)
             return
         raise RunExecutionError(f"Unsupported run type `{run.run_type}`.")
 

@@ -85,6 +85,10 @@ async def suggest_fix(request: SuggestFixRequest, *, client: EvalMCPAPIClient | 
     )
 
 
+async def get_latest_suggestion(run_id: str, *, client: EvalMCPAPIClient | None = None) -> dict:
+    return await _dispatch("get_latest_suggestion", {"run_id": run_id}, client=client)
+
+
 async def get_eval_history(request: HistoryFilters, *, client: EvalMCPAPIClient | None = None) -> dict:
     return await _dispatch(
         "get_eval_history",

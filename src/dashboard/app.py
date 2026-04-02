@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
 
 from core.logging import setup_logging
-from db.models import EvalCaseResult, EvalRun, MetricResult, Suggestion
+from db.models import EvalCaseResult, EvalRun, MetricResult
 from db.queries import build_metric_trend_statement, build_recent_suggestions_statement
 from db.session import session_scope
 from domain.enums import RunStatus

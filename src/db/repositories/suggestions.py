@@ -41,3 +41,12 @@ class SuggestionsRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def get_latest_by_run(self, run_db_id: str) -> Suggestion | None:
+        stmt = (
+            select(Suggestion)
+            .where(Suggestion.run_id == run_db_id)
+            .order_by(desc(Suggestion.created_at))
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+

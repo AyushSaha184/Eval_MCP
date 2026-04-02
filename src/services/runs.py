@@ -6,7 +6,7 @@ from core.errors import NotFoundError, ValidationFailed
 from core.ids import generate_run_id
 from db.repositories.annotations import AnnotationsRepository
 from db.repositories.runs import RunsRepository
-from domain.enums import RunStatus, RunType
+from domain.enums import RunStatus, RunType, TriggerSource
 from domain.schemas import (
     AdHocPrompt,
     AnnotationRead,
@@ -19,6 +19,7 @@ from domain.schemas import (
     RunEvalRequest,
     RunQueued,
     RuntimeConfig,
+    SuggestFixRequest,
 )
 from services.caching import CachingService
 from services.datasets import DatasetService
@@ -82,6 +83,19 @@ class RunService:
             runtime_config=runtime_snapshot,
         )
         if not request.force_rerun:
+            inflight = await self.caching.find_inflight_run(
+                project_id=project.id,
+                cache_key=cache_key,
+                run_type=run_type,
+            )
+            if inflight is not None:
+                return RunQueued(
+                    run_id=inflight.run_id,
+                    status=inflight.status,
+                    cached=False,
+                    cache_key=cache_key,
+                    source_run_id=inflight.run_id,
+                )
             cached = await self.caching.find_cached_run(
                 project_id=project.id,
                 cache_key=cache_key,
@@ -171,6 +185,19 @@ class RunService:
             runtime_config=runtime_snapshot,
         )
         if not request.force_rerun:
+            inflight = await self.caching.find_inflight_run(
+                project_id=project.id,
+                cache_key=cache_key,
+                run_type=RunType.RAG_EVAL,
+            )
+            if inflight is not None:
+                return RunQueued(
+                    run_id=inflight.run_id,
+                    status=inflight.status,
+                    cached=False,
+                    cache_key=cache_key,
+                    source_run_id=inflight.run_id,
+                )
             cached = await self.caching.find_cached_run(
                 project_id=project.id,
                 cache_key=cache_key,
@@ -211,6 +238,72 @@ class RunService:
         )
         await self.queue.enqueue(run.run_id)
         return RunQueued(run_id=run.run_id, status=run.status, cached=False, cache_key=cache_key)
+
+    async def queue_suggestion(self, request: SuggestFixRequest) -> RunQueued:
+        """Queue a suggestion evaluation run.
+        
+        This creates a background job to analyze a run for failure patterns
+        and generate improvement suggestions via LLM judge. Returns immediately
+        with a run_id for polling instead of blocking on LLM evaluation.
+        """
+        # Get and validate the run being analyzed
+        referenced_run = await self.runs.get_by_public_id(request.run_id)
+        if referenced_run is None:
+            raise NotFoundError(f"Run `{request.run_id}` was not found.")
+        
+        # Normalize model name once so cache key and snapshot stay consistent.
+        resolved_model_name = request.model_name or "gemini-2.5-flash"
+        cache_key = f"suggestion_{request.run_id}_{request.case_limit}_{request.cluster_limit}_{resolved_model_name}"
+
+        inflight = await self.caching.find_inflight_run(
+            project_id=referenced_run.project_id,
+            cache_key=cache_key,
+            run_type=RunType.SUGGESTION_EVAL,
+        )
+        if inflight is not None:
+            return RunQueued(
+                run_id=inflight.run_id,
+                status=inflight.status,
+                cached=False,
+                cache_key=cache_key,
+                source_run_id=inflight.run_id,
+            )
+        
+        # Create a suggestion eval run with request parameters stored in snapshot
+        suggestion_run = await self.runs.create(
+            run_id=generate_run_id(),
+            project_id=referenced_run.project_id,
+            run_type=RunType.SUGGESTION_EVAL,
+            status=RunStatus.QUEUED,
+            trigger_source=TriggerSource.API,
+            triggered_by="suggestion_service",
+            prompt_ref_id=None,
+            dataset_ref_id=None,
+            baseline_run_id=None,
+            metrics_requested_json=[],
+            cache_key=cache_key,
+            is_cached_result=False,
+            total_cases=1,
+        )
+        
+        # Store suggestion configuration in snapshot's runtime_config_snapshot_json
+        # This is where the SuggestionEvalExecutor will read the parameters from
+        await self.runs.create_snapshot(
+            run_db_id=suggestion_run.id,
+            prompt_snapshot_json={},
+            dataset_snapshot_json={},
+            model_config_snapshot_json={},
+            retriever_config_snapshot_json={},
+            runtime_config_snapshot_json={
+                "referenced_run_id": request.run_id,
+                "case_limit": request.case_limit,
+                "cluster_limit": request.cluster_limit,
+                "model_name": resolved_model_name,
+            },
+        )
+        
+        await self.queue.enqueue(suggestion_run.run_id)
+        return RunQueued(run_id=suggestion_run.run_id, status=suggestion_run.status, cached=False, cache_key=cache_key)
 
     async def rerun_failed_cases(self, request: RerunFailedRequest) -> RunQueued:
         source_run = await self.runs.get_by_public_id(request.run_id)

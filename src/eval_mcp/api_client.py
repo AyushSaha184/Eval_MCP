@@ -126,6 +126,9 @@ class EvalMCPAPIClient:
     async def suggest_fix(self, request: dict) -> dict:
         return await self._request("POST", "/v1/suggestions", json=request)
 
+    async def get_latest_suggestion(self, run_id: str) -> dict:
+        return await self._request("GET", f"/v1/runs/{run_id}/suggestions/latest")
+
     async def get_eval_history(self, request: dict) -> dict:
         return await self._request("POST", "/v1/history/query", json=request)
 

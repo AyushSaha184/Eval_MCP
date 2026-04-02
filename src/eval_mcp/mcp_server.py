@@ -18,6 +18,7 @@ from eval_mcp.tool_handlers import (
     compare_prompt_versions as compare_prompt_versions_tool,
     detect_regression as detect_regression_tool,
     get_eval_history as get_eval_history_tool,
+    get_latest_suggestion as get_latest_suggestion_tool,
     get_run_status as get_run_status_tool,
     get_supported_metrics as get_supported_metrics_tool,
     list_datasets as list_datasets_tool,
@@ -96,6 +97,11 @@ async def score_rag_pipeline(request: RagScoreRequest) -> dict:
 @mcp.tool(name="suggest_fix")
 async def suggest_fix(request: SuggestFixRequest) -> dict:
     return await _invoke(suggest_fix_tool, request)
+
+
+@mcp.tool(name="get_latest_suggestion")
+async def get_latest_suggestion(run_id: str) -> dict:
+    return await _invoke(get_latest_suggestion_tool, run_id)
 
 
 @mcp.tool(name="get_eval_history")

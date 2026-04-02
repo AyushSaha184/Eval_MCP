@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from core.constants import DEFAULT_CLUSTER_LIMIT, DEFAULT_PAGE_SIZE
+from core.metrics_registry import get_metric_definition
 from domain.enums import ArtifactType, MetricDirection, RunStatus, RunType, TriggerSource
 from domain.types import JSONDict
 
@@ -180,6 +181,8 @@ class RunEvalRequest(EvalBaseModel):
         normalized = sorted({metric.strip().lower() for metric in metrics if metric.strip()})
         if not normalized:
             raise ValueError("At least one metric is required.")
+        for metric in normalized:
+            get_metric_definition(metric)
         return normalized
 
 
@@ -204,6 +207,16 @@ class RagScoreRequest(EvalBaseModel):
     trigger_source: TriggerSource = TriggerSource.MCP
     triggered_by: str | None = None
     force_rerun: bool = False
+
+    @field_validator("metrics")
+    @classmethod
+    def normalize_metrics(cls, metrics: list[str]) -> list[str]:
+        normalized = sorted({metric.strip().lower() for metric in metrics if metric.strip()})
+        if not normalized:
+            raise ValueError("At least one metric is required.")
+        for metric in normalized:
+            get_metric_definition(metric)
+        return normalized
 
     @model_validator(mode="after")
     def validate_dataset_source(self) -> "RagScoreRequest":
@@ -266,6 +279,7 @@ class RunStatusResponse(EvalBaseModel):
     completed_at: datetime | None = None
     error_message: str | None = None
     is_cached_result: bool = False
+    latest_suggestion: SuggestionResponse | None = None
 
 
 class HistoryFilters(PaginationParams):
@@ -297,6 +311,16 @@ class CompareRequest(EvalBaseModel):
     triggered_by: str | None = None
     force_rerun: bool = False
 
+    @field_validator("metrics")
+    @classmethod
+    def normalize_metrics(cls, metrics: list[str]) -> list[str]:
+        normalized = sorted({metric.strip().lower() for metric in metrics if metric.strip()})
+        if not normalized:
+            raise ValueError("At least one metric is required.")
+        for metric in normalized:
+            get_metric_definition(metric)
+        return normalized
+
 
 class MetricDelta(EvalBaseModel):
     metric_name: str
@@ -321,6 +345,13 @@ class CompareResponse(EvalBaseModel):
 class RegressionThreshold(EvalBaseModel):
     metric_name: str
     allowed_delta: float = Field(ge=0.0)
+
+    @field_validator("metric_name")
+    @classmethod
+    def validate_metric_name(cls, metric_name: str) -> str:
+        normalized = metric_name.strip().lower()
+        get_metric_definition(normalized)
+        return normalized
 
 
 class RegressionRequest(EvalBaseModel):

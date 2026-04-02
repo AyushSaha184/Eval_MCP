@@ -6,7 +6,7 @@ from core.errors import NotFoundError
 from db.repositories.metrics import MetricsRepository
 from db.repositories.runs import RunsRepository
 from db.repositories.suggestions import SuggestionsRepository
-from domain.schemas import SuggestFixRequest, SuggestionResponse
+from domain.schemas import FailureCluster, SuggestFixRequest, SuggestionResponse
 from eval_backends.judges.google_judge import GoogleJudgeRunner
 from services.clustering import ClusteringService
 
@@ -45,6 +45,24 @@ class SuggestionService:
             model_name=request.model_name or "gemini-2.5-flash",
             metadata_json=judge_result.metadata,
         )
+        return SuggestionResponse(
+            id=suggestion.id,
+            run_id=run.run_id,
+            summary=suggestion.summary,
+            suggestion_text=suggestion.suggestion_text,
+            failure_clusters=clusters,
+            model_name=suggestion.model_name,
+            created_at=suggestion.created_at,
+        )
+
+    async def get_latest_for_run(self, run_public_id: str) -> SuggestionResponse | None:
+        run = await self.runs.get_by_public_id(run_public_id)
+        if run is None:
+            raise NotFoundError(f"Run `{run_public_id}` was not found.")
+        suggestion = await self.suggestions.get_latest_by_run(run.id)
+        if suggestion is None:
+            return None
+        clusters = [FailureCluster(**item) for item in suggestion.failure_clusters_json]
         return SuggestionResponse(
             id=suggestion.id,
             run_id=run.run_id,

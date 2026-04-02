@@ -104,6 +104,26 @@ class RunsRepository:
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
+    async def find_cached_inflight(
+        self,
+        *,
+        project_id: str,
+        cache_key: str,
+        run_type: RunType,
+    ) -> EvalRun | None:
+        stmt = (
+            select(EvalRun)
+            .where(
+                EvalRun.project_id == project_id,
+                EvalRun.cache_key == cache_key,
+                EvalRun.run_type == run_type,
+                EvalRun.status.in_((RunStatus.QUEUED, RunStatus.RUNNING)),
+            )
+            .order_by(EvalRun.created_at.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def list_history(
         self,
         *,

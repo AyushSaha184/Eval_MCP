@@ -14,7 +14,7 @@ from eval_mcp.api_client import EvalMCPAPIClient, EvalMCPAPIError
 from eval_mcp import cli as cli_module
 from eval_mcp.cli import build_parser, main
 from eval_mcp.config import get_mcp_settings
-from eval_mcp.tool_handlers import get_run_status, register_golden_dataset
+from eval_mcp.tool_handlers import register_golden_dataset
 
 
 def test_cli_parser_supports_required_commands() -> None:

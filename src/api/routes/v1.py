@@ -179,10 +179,25 @@ async def annotate_run(request: AnnotationRequest, auth: AuthContext = Depends(r
 
 @router.post("/suggestions")
 async def suggest_fix(request: SuggestFixRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+    """Queue a suggestion evaluation run.
+    
+    Returns immediately with a run_id for polling status, rather than
+    blocking on LLM judge evaluation.
+    """
     async with session_scope() as session:
         await AuthService(session).authorize_run(auth, request.run_id)
-        result = await SuggestionService(session).suggest_fix(request)
-        return {"ok": True, **result.model_dump(mode="json")}
+        queued = await RunService(session).queue_suggestion(request)
+        return {"ok": True, **queued.model_dump(mode="json")}
+
+
+@router.get("/runs/{run_id}/suggestions/latest")
+async def get_latest_suggestion(run_id: str, auth: AuthContext = Depends(require_api_key)) -> dict:
+    async with session_scope() as session:
+        await AuthService(session).authorize_run(auth, run_id)
+        suggestion = await SuggestionService(session).get_latest_for_run(run_id)
+        if suggestion is None:
+            return {"ok": True, "status": "pending", "suggestion": None}
+        return {"ok": True, "status": "completed", **suggestion.model_dump(mode="json")}
 
 
 @router.get("/meta/supported-metrics")

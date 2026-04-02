@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import PurePosixPath
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import get_settings
+from core.errors import ValidationFailed
 from db.repositories.artifacts import ArtifactsRepository
 from domain.enums import ArtifactType
 from storage.local import LocalArtifactStorage
@@ -28,6 +29,17 @@ class ArtifactService:
             )
         return LocalArtifactStorage(self.settings.local_artifact_directory)
 
+    @staticmethod
+    def _build_relative_path(run_public_id: str, filename: str) -> str:
+        run_path = PurePosixPath(run_public_id.replace("\\", "/"))
+        file_path = PurePosixPath(filename.replace("\\", "/"))
+        if run_path.is_absolute() or file_path.is_absolute():
+            raise ValidationFailed("Artifact path must be relative.")
+        combined = run_path / file_path
+        if any(part == ".." for part in combined.parts):
+            raise ValidationFailed("Artifact path traversal is not allowed.")
+        return str(combined)
+
     async def persist_text(
         self,
         *,
@@ -39,7 +51,7 @@ class ArtifactService:
         metadata: dict | None = None,
     ):
         storage = self._get_storage()
-        relative_path = str(Path(run_public_id) / filename)
+        relative_path = self._build_relative_path(run_public_id, filename)
         uri = await storage.write_text(relative_path=relative_path, content=content, metadata=metadata)
         return await self.artifacts.create(
             run_id=run_db_id,
@@ -59,7 +71,7 @@ class ArtifactService:
         metadata: dict | None = None,
     ):
         storage = self._get_storage()
-        relative_path = str(Path(run_public_id) / filename)
+        relative_path = self._build_relative_path(run_public_id, filename)
         uri = await storage.write_json(relative_path=relative_path, payload=payload)
         return await self.artifacts.create(
             run_id=run_db_id,
