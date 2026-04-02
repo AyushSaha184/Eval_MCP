@@ -21,11 +21,13 @@ class ClientsRepository:
         self,
         *,
         account_identifier: str,
+        password_hash: str,
         display_name: str | None,
         onboarding_token_hash: str | None,
     ) -> Client:
         client = Client(
             account_identifier=account_identifier,
+            password_hash=password_hash,
             display_name=display_name,
             onboarding_token_hash=onboarding_token_hash,
             is_active=True,
@@ -44,3 +46,10 @@ class ClientsRepository:
 
     async def clear_onboarding_token_hash(self, *, client_id: str) -> None:
         await self.update_onboarding_token_hash(client_id=client_id, onboarding_token_hash=None)
+
+    async def update_password_hash(self, *, client_id: str, password_hash: str) -> None:
+        client = await self.get_by_id(client_id)
+        if client is None:
+            return
+        client.password_hash = password_hash
+        await self.session.flush()

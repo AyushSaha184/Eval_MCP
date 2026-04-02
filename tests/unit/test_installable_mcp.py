@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import builtins
 from pathlib import Path
 
 import httpx
@@ -10,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 
 from eval_mcp.api_client import EvalMCPAPIClient, EvalMCPAPIError
+from eval_mcp import cli as cli_module
 from eval_mcp.cli import build_parser, main
 from eval_mcp.config import get_mcp_settings
 from eval_mcp.tool_handlers import get_run_status, register_golden_dataset
@@ -24,9 +26,11 @@ def test_cli_parser_supports_required_commands() -> None:
         "worker": [],
         "dashboard": [],
         "migrate": [],
-        "register": ["--identifier", "user@example.com"],
+        "register": ["--identifier", "user@example.com", "--password", "password123"],
+        "login": ["--identifier", "user@example.com", "--password", "password123"],
         "create-api-key": ["--identifier", "user@example.com", "--onboarding-token", "token"],
         "create-project": ["--name", "Hosted Project"],
+        "logout": [],
         "whoami": [],
         "list-api-keys": [],
         "revoke-api-key": ["key_123"],
@@ -137,6 +141,60 @@ def test_module_entrypoint_supports_dry_run() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.asyncio
+async def test_login_command_blocks_cross_account_switch(monkeypatch) -> None:
+    monkeypatch.setattr(
+        cli_module,
+        "load_local_config",
+        lambda: {"identifier": "alice@example.com", "api_key": "emcp_existing_key"},
+    )
+
+    args = build_parser().parse_args(["login", "--email", "bob@example.com", "--password", "password123"])
+    with pytest.raises(SystemExit) as exc_info:
+        await cli_module._cmd_login(args)
+
+    assert "already logged in with alice@example.com" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_login_command_stores_new_key(monkeypatch) -> None:
+    saved: dict[str, str] = {}
+    printed: list[str] = []
+
+    class DummyClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def login_client(self, request: dict) -> dict:
+            assert request["identifier"] == "alice@example.com"
+            assert request["password"] == "password123"
+            return {
+                "identifier": "alice@example.com",
+                "client_id": "client_1",
+                "project_id": "project_1",
+                "project_slug": "alice-default",
+                "key_id": "key_1",
+                "key_prefix": "emcp_abcd1234",
+                "api_key": "emcp_abcd1234_secret",
+                "label": request["label"],
+            }
+
+    monkeypatch.setattr(cli_module, "load_local_config", lambda: {})
+    monkeypatch.setattr(cli_module, "save_local_config", lambda data: saved.update(data))
+    monkeypatch.setattr(cli_module, "api_client", lambda: DummyClient())
+    monkeypatch.setattr(builtins, "print", lambda *args, **kwargs: printed.append(" ".join(str(arg) for arg in args)))
+
+    args = build_parser().parse_args(["login", "--email", "alice@example.com", "--password", "password123"])
+    await cli_module._cmd_login(args)
+
+    assert saved["identifier"] == "alice@example.com"
+    assert saved["api_key"] == "emcp_abcd1234_secret"
+    assert any("Warning: store this API key securely." in line for line in printed)
 
 
 def _dataset_registration():

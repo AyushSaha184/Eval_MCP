@@ -23,3 +23,9 @@ def save_local_config(data: dict[str, Any]) -> None:
     path = _config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def clear_local_config() -> None:
+    path = _config_path()
+    if path.exists():
+        path.unlink()

@@ -29,20 +29,24 @@ class ClientService:
         self.clients = ClientsRepository(session)
         self.projects = ProjectsRepository(session)
 
-    async def register(self, *, identifier: str, display_name: str | None) -> tuple[object, object, str, bool]:
+    async def register(self, *, identifier: str, password: str, display_name: str | None) -> tuple[object, object, str, bool]:
         normalized_identifier = _normalize_identifier(identifier)
         client = await self.clients.get_by_identifier(normalized_identifier)
+        password_hash = hash_secret(password)
         onboarding_token = secrets.token_urlsafe(32)
         onboarding_token_hash = hash_secret(onboarding_token)
         created = False
         if client is None:
             client = await self.clients.create(
                 account_identifier=normalized_identifier,
+                password_hash=password_hash,
                 display_name=display_name,
                 onboarding_token_hash=onboarding_token_hash,
             )
             created = True
         else:
+            if not verify_secret(password, client.password_hash):
+                raise ValidationFailed("An account with that identifier already exists. Use eval-mcp login instead.")
             await self.clients.update_onboarding_token_hash(
                 client_id=client.id,
                 onboarding_token_hash=onboarding_token_hash,
@@ -91,3 +95,11 @@ class ClientService:
 
     async def consume_onboarding_token(self, *, client_id: str) -> None:
         await self.clients.clear_onboarding_token_hash(client_id=client_id)
+
+    async def authenticate(self, *, identifier: str, password: str):
+        client = await self.get_required(identifier)
+        if not client.is_active:
+            raise ValidationFailed("Client account is inactive.")
+        if not verify_secret(password, client.password_hash):
+            raise ValidationFailed("Invalid email or password.")
+        return client

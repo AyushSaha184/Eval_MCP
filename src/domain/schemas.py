@@ -457,6 +457,7 @@ class InternalRunSnapshot(EvalBaseModel):
 
 class RegisterClientRequest(EvalBaseModel):
     identifier: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=8, max_length=255)
     display_name: str | None = Field(default=None, max_length=255)
 
 
@@ -491,6 +492,24 @@ class CreateApiKeyResponse(EvalBaseModel):
 class CreateScopedApiKeyRequest(EvalBaseModel):
     label: str | None = Field(default=None, max_length=120)
     project: str | None = None
+
+
+class LoginClientRequest(EvalBaseModel):
+    identifier: str = Field(min_length=1, max_length=255)
+    password: str = Field(min_length=8, max_length=255)
+    label: str | None = Field(default=None, max_length=120)
+    project: str | None = None
+
+
+class LoginClientResponse(EvalBaseModel):
+    key_id: str
+    key_prefix: str
+    api_key: str
+    client_id: str
+    identifier: str
+    project_id: str
+    project_slug: str
+    label: str
 
 
 class HostedProjectCreateRequest(EvalBaseModel):

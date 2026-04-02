@@ -10,6 +10,7 @@ from domain.schemas import (
     CreateApiKeyRequest,
     CreateScopedApiKeyRequest,
     HostedProjectCreateRequest,
+    LoginClientRequest,
     ProjectCreate,
     RegisterClientRequest,
     WhoAmIResponse,
@@ -30,6 +31,7 @@ async def register_client(request: RegisterClientRequest) -> dict:
     async with session_scope() as session:
         client, project, onboarding_token, created = await ClientService(session).register(
             identifier=request.identifier,
+            password=request.password,
             display_name=request.display_name,
         )
         return {
@@ -41,6 +43,30 @@ async def register_client(request: RegisterClientRequest) -> dict:
             "project_slug": project.slug,
             "onboarding_token": onboarding_token,
             "created": created,
+        }
+
+
+@router.post("/login")
+async def login_client(request: LoginClientRequest) -> dict:
+    async with session_scope() as session:
+        clients = ClientService(session)
+        client = await clients.authenticate(identifier=request.identifier, password=request.password)
+        key_row, generated = await APIKeyService(session).create_for_client(
+            client_id=client.id,
+            label=request.label,
+            project_identifier=request.project,
+        )
+        project = await ProjectsRepository(session).get_by_id(key_row.project_id)
+        return {
+            "ok": True,
+            "key_id": key_row.id,
+            "key_prefix": key_row.key_prefix,
+            "api_key": generated.raw_key,
+            "client_id": client.id,
+            "identifier": client.account_identifier,
+            "project_id": project.id,
+            "project_slug": project.slug,
+            "label": key_row.label,
         }
 
 

@@ -14,7 +14,11 @@ from tests.fixtures.sample_data import dataset_request, prompt_request, run_requ
 async def _register_and_create_key(client: httpx.AsyncClient, identifier: str, label: str) -> dict:
     register = await client.post(
         "/v1/auth/register",
-        json={"identifier": identifier, "display_name": identifier.split("@", 1)[0]},
+        json={
+            "identifier": identifier,
+            "password": "test-password-123",
+            "display_name": identifier.split("@", 1)[0],
+        },
     )
     assert register.status_code == 200
     register_payload = register.json()
@@ -126,7 +130,7 @@ async def test_onboarding_token_is_one_time_and_authenticated_project_management
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         register = await client.post(
             "/v1/auth/register",
-            json={"identifier": "carol@example.com", "display_name": "carol"},
+            json={"identifier": "carol@example.com", "password": "carol-password", "display_name": "carol"},
         )
         assert register.status_code == 200
         register_payload = register.json()
@@ -168,3 +172,61 @@ async def test_onboarding_token_is_one_time_and_authenticated_project_management
         )
         assert second_key.status_code == 200
         assert second_key.json()["project_slug"] == "carol-project-two"
+
+
+@pytest.mark.asyncio
+async def test_password_login_can_recover_account_with_new_api_key(test_database) -> None:
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        register = await client.post(
+            "/v1/auth/register",
+            json={"identifier": "dana@example.com", "password": "dana-password", "display_name": "dana"},
+        )
+        assert register.status_code == 200
+
+        login = await client.post(
+            "/v1/auth/login",
+            json={"identifier": "dana@example.com", "password": "dana-password"},
+        )
+        assert login.status_code == 200
+        login_payload = login.json()
+        assert login_payload["identifier"] == "dana@example.com"
+        assert login_payload["api_key"].startswith("emcp_")
+
+        whoami = await client.get("/v1/auth/whoami", headers={"x-api-key": login_payload["api_key"]})
+        assert whoami.status_code == 200
+        assert whoami.json()["identifier"] == "dana@example.com"
+
+
+@pytest.mark.asyncio
+async def test_register_existing_account_with_wrong_password_is_rejected(test_database) -> None:
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        first = await client.post(
+            "/v1/auth/register",
+            json={"identifier": "erin@example.com", "password": "erin-password", "display_name": "erin"},
+        )
+        assert first.status_code == 200
+
+        second = await client.post(
+            "/v1/auth/register",
+            json={"identifier": "erin@example.com", "password": "wrong-password", "display_name": "erin"},
+        )
+        assert second.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_login_with_invalid_password_is_rejected(test_database) -> None:
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        register = await client.post(
+            "/v1/auth/register",
+            json={"identifier": "frank@example.com", "password": "frank-password", "display_name": "frank"},
+        )
+        assert register.status_code == 200
+
+        login = await client.post(
+            "/v1/auth/login",
+            json={"identifier": "frank@example.com", "password": "wrong-password"},
+        )
+        assert login.status_code == 400

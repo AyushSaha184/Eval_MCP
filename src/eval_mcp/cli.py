@@ -4,11 +4,12 @@ import argparse
 import asyncio
 import json
 from collections.abc import Sequence
+from datetime import datetime, timezone
 
 from core.config import get_settings
 from eval_mcp.api_client import api_client
 from eval_mcp.config import get_mcp_settings
-from eval_mcp.local_config import load_local_config, save_local_config
+from eval_mcp.local_config import clear_local_config, load_local_config, save_local_config
 from eval_mcp.mcp_server import run_server
 from eval_mcp_server.runtime import run_api, run_dashboard, run_migrations, run_worker
 
@@ -40,7 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--identifier", default=None, help="Email or username used for registration.")
     register.add_argument("--email", default=None, help="Email alias for --identifier.")
     register.add_argument("--username", default=None, help="Username alias for --identifier.")
+    register.add_argument("--password", required=True, help="Account password for hosted auth.")
     register.add_argument("--display-name", default=None, help="Optional display name.")
+
+    login = subparsers.add_parser("login", help="Authenticate a hosted account and create a fresh API key.")
+    login.add_argument("--identifier", default=None, help="Email or username used for registration.")
+    login.add_argument("--email", default=None, help="Email alias for --identifier.")
+    login.add_argument("--username", default=None, help="Username alias for --identifier.")
+    login.add_argument("--password", required=True, help="Account password for hosted auth.")
+    login.add_argument("--label", default=None, help="Optional API key label.")
+    login.add_argument("--project", default=None, help="Optional project slug/id to scope the key.")
 
     create_key = subparsers.add_parser("create-api-key", help="Create a scoped API key for IDE MCP usage.")
     create_key.add_argument("--identifier", default=None, help="Registration identifier (email or username).")
@@ -53,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_project.add_argument("--slug", default=None, help="Optional project slug.")
     create_project.add_argument("--description", default=None, help="Optional project description.")
 
+    subparsers.add_parser("logout", help="Clear the locally stored hosted account state.")
     subparsers.add_parser("whoami", help="Validate the current API key and print scoped identity.")
     subparsers.add_parser("list-api-keys", help="List DB-backed API keys for your account.")
     revoke_key = subparsers.add_parser("revoke-api-key", help="Revoke an API key by id.")
@@ -65,16 +76,54 @@ def _resolve_identifier(args: argparse.Namespace, local_cfg: dict) -> str | None
     return args.identifier or args.email or args.username or local_cfg.get("identifier")
 
 
+def _ensure_not_switching_accounts(target_identifier: str | None, local_cfg: dict) -> None:
+    current_identifier = local_cfg.get("identifier")
+    current_api_key = local_cfg.get("api_key")
+    if not current_identifier or not current_api_key or not target_identifier:
+        return
+    if current_identifier != target_identifier:
+        raise SystemExit(
+            f"You are already logged in with {current_identifier}, please log out before switching accounts."
+        )
+
+
+def _default_login_label() -> str:
+    return "login-" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+
+
+def _store_api_key_response(local_cfg: dict, response: dict) -> None:
+    local_cfg.update(
+        {
+            "identifier": response["identifier"],
+            "client_id": response["client_id"],
+            "project_id": response["project_id"],
+            "project_slug": response["project_slug"],
+            "last_key_id": response["key_id"],
+            "last_key_prefix": response["key_prefix"],
+            "api_key": response["api_key"],
+        }
+    )
+    local_cfg.pop("onboarding_token", None)
+    save_local_config(local_cfg)
+
+
+def _print_key_warning() -> None:
+    print("Warning: store this API key securely.")
+    print("If you lose this key, you will need to log in again before you can switch accounts or restore access.")
+
+
 async def _cmd_register(args: argparse.Namespace) -> None:
     local_cfg = load_local_config()
     identifier = _resolve_identifier(args, local_cfg)
     if not identifier:
         raise SystemExit("Provide --identifier (or --email / --username) for registration.")
+    _ensure_not_switching_accounts(identifier, local_cfg)
 
     async with api_client() as client:
         response = await client.register_client(
             {
                 "identifier": identifier,
+                "password": args.password,
                 "display_name": args.display_name,
             }
         )
@@ -102,9 +151,33 @@ async def _cmd_register(args: argparse.Namespace) -> None:
     print("Next step: eval-mcp create-api-key")
 
 
+async def _cmd_login(args: argparse.Namespace) -> None:
+    local_cfg = load_local_config()
+    identifier = _resolve_identifier(args, local_cfg)
+    if not identifier:
+        raise SystemExit("Provide --identifier (or --email / --username) for login.")
+    _ensure_not_switching_accounts(identifier, local_cfg)
+
+    async with api_client() as client:
+        response = await client.login_client(
+            {
+                "identifier": identifier,
+                "password": args.password,
+                "label": args.label or _default_login_label(),
+                "project": args.project,
+            }
+        )
+
+    _store_api_key_response(local_cfg, response)
+    print("Login complete. A fresh API key was created for this account.")
+    print(response["api_key"])
+    _print_key_warning()
+
+
 async def _cmd_create_api_key(args: argparse.Namespace) -> None:
     local_cfg = load_local_config()
     identifier = _resolve_identifier(args, local_cfg)
+    _ensure_not_switching_accounts(identifier, local_cfg)
     onboarding_token = args.onboarding_token or local_cfg.get("onboarding_token")
     existing_api_key = get_mcp_settings().api_key or local_cfg.get("api_key")
 
@@ -132,23 +205,12 @@ async def _cmd_create_api_key(args: argparse.Namespace) -> None:
                 }
             )
 
-    local_cfg.update(
-        {
-            "identifier": response["identifier"],
-            "client_id": response["client_id"],
-            "project_id": response["project_id"],
-            "project_slug": response["project_slug"],
-            "last_key_id": response["key_id"],
-            "last_key_prefix": response["key_prefix"],
-            "api_key": response["api_key"],
-        }
-    )
-    local_cfg.pop("onboarding_token", None)
-    save_local_config(local_cfg)
+    _store_api_key_response(local_cfg, response)
 
     settings = get_mcp_settings()
     print("API key created. This is shown once.")
     print(response["api_key"])
+    _print_key_warning()
     print("Use this MCP config snippet:")
     snippet = {
         "mcpServers": {
@@ -182,6 +244,16 @@ async def _cmd_create_project(args: argparse.Namespace) -> None:
     print("Project created.")
     print(json.dumps(response, indent=2, default=str))
     print(f"Next step: eval-mcp create-api-key --project {response['slug']}")
+
+
+def _cmd_logout() -> None:
+    local_cfg = load_local_config()
+    identifier = local_cfg.get("identifier")
+    clear_local_config()
+    if identifier:
+        print(f"Logged out from {identifier}.")
+    else:
+        print("Local Eval_MCP auth state cleared.")
 
 
 async def _cmd_whoami() -> None:
@@ -224,11 +296,17 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "register":
         asyncio.run(_cmd_register(args))
         return
+    if args.command == "login":
+        asyncio.run(_cmd_login(args))
+        return
     if args.command == "create-api-key":
         asyncio.run(_cmd_create_api_key(args))
         return
     if args.command == "create-project":
         asyncio.run(_cmd_create_project(args))
+        return
+    if args.command == "logout":
+        _cmd_logout()
         return
     if args.command == "whoami":
         asyncio.run(_cmd_whoami())

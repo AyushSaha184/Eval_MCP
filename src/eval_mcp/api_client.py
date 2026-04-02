@@ -84,6 +84,9 @@ class EvalMCPAPIClient:
     async def create_api_key(self, request: dict) -> dict:
         return await self._request("POST", "/v1/auth/api-keys", json=request)
 
+    async def login_client(self, request: dict) -> dict:
+        return await self._request("POST", "/v1/auth/login", json=request)
+
     async def create_api_key_for_current_client(self, request: dict) -> dict:
         return await self._request("POST", "/v1/auth/api-keys/current", json=request)
 

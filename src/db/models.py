@@ -43,6 +43,7 @@ class Client(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "clients"
 
     account_identifier: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     onboarding_token_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
