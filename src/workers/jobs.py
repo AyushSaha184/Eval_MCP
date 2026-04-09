@@ -6,6 +6,7 @@ import logging
 from core.config import get_settings
 from db.repositories.runs import RunsRepository
 from db.session import session_scope
+from domain.enums import RunStatus
 from workers.dispatcher import RunDispatcher
 from workers.queue import build_queue
 from workers.retry import run_with_retry
@@ -23,8 +24,10 @@ async def process_run(run_public_id: str) -> None:
             run = await runs_repo.get_by_public_id(run_public_id)
             if run is None:
                 return
-            if run.status != "running":
-                await runs_repo.mark_running(run.id, attempt_count=run.attempt_count + 1)
+            if run.status != RunStatus.RUNNING:
+                await runs_repo.mark_running(
+                    run.id, attempt_count=run.attempt_count + 1
+                )
             await RunDispatcher(session).dispatch(run)
 
     try:
@@ -50,7 +53,9 @@ async def process_next_queued_run() -> str | None:
         if run_id is None:
             return None
         async with session_scope(settings) as session:
-            claimed = await RunsRepository(session).claim_queued_run_by_public_id(run_id)
+            claimed = await RunsRepository(session).claim_queued_run_by_public_id(
+                run_id
+            )
             if claimed is None:
                 return None
         await process_run(run_id)

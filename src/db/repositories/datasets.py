@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,7 +59,9 @@ class DatasetsRepository:
         return rows
 
     async def count_cases(self, dataset_id: str) -> int:
-        stmt = select(func.count(DatasetCase.id)).where(DatasetCase.dataset_id == dataset_id)
+        stmt = select(func.count(DatasetCase.id)).where(
+            DatasetCase.dataset_id == dataset_id
+        )
         return int((await self.session.execute(stmt)).scalar_one() or 0)
 
     async def get_by_reference(
@@ -70,7 +73,9 @@ class DatasetsRepository:
         version_hash: str | None = None,
     ) -> Dataset | None:
         if dataset_id:
-            stmt = select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project_id)
+            stmt = select(Dataset).where(
+                Dataset.id == dataset_id, Dataset.project_id == project_id
+            )
             return (await self.session.execute(stmt)).scalar_one_or_none()
 
         if not dataset_name:
@@ -102,3 +107,23 @@ class DatasetsRepository:
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_by_project_with_counts(
+        self, *, project_id: str
+    ) -> tuple[list[Dataset], dict[str, int]]:
+        stmt = (
+            select(Dataset)
+            .where(Dataset.project_id == project_id)
+            .order_by(Dataset.dataset_name.asc(), Dataset.created_at.desc())
+        )
+        datasets = list((await self.session.execute(stmt)).scalars().all())
+        if not datasets:
+            return datasets, {}
+
+        count_stmt = (
+            select(DatasetCase.dataset_id, func.count(DatasetCase.id))
+            .where(DatasetCase.dataset_id.in_([d.id for d in datasets]))
+            .group_by(DatasetCase.dataset_id)
+        )
+        rows = (await self.session.execute(count_stmt)).all()
+        counts = {row[0]: row[1] for row in rows}
+        return datasets, counts

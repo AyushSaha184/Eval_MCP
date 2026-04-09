@@ -4,7 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.hashing import build_cache_key, hash_prompt_snapshot
 from core.metrics_registry import get_metric_definition
+from db.models import EvalRun
 from db.repositories.runs import RunsRepository
+from domain.enums import RunType
 
 
 class CachingService:
@@ -32,13 +34,13 @@ class CachingService:
         retriever_config: dict | None,
         runtime_config: dict,
     ) -> str:
-        backend_fingerprint = {
-            metric: {
-                "provider": get_metric_definition(metric).provider,
-                "family": get_metric_definition(metric).family,
+        backend_fingerprint = {}
+        for metric in sorted(metrics):
+            metric_def = get_metric_definition(metric)
+            backend_fingerprint[metric] = {
+                "provider": metric_def.provider,
+                "family": metric_def.family,
             }
-            for metric in sorted(metrics)
-        }
         payload = {
             "project_id": project_id,
             "run_type": run_type,
@@ -53,17 +55,20 @@ class CachingService:
         }
         return build_cache_key(payload)
 
-    async def find_cached_run(self, *, project_id: str, cache_key: str, run_type):
+    async def find_cached_run(
+        self, *, project_id: str, cache_key: str, run_type: RunType
+    ) -> EvalRun | None:
         return await self.runs.find_cached_completed(
             project_id=project_id,
             cache_key=cache_key,
             run_type=run_type,
         )
 
-    async def find_inflight_run(self, *, project_id: str, cache_key: str, run_type):
+    async def find_inflight_run(
+        self, *, project_id: str, cache_key: str, run_type: RunType
+    ) -> EvalRun | None:
         return await self.runs.find_cached_inflight(
             project_id=project_id,
             cache_key=cache_key,
             run_type=run_type,
         )
-

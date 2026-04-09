@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import EvalCaseResult, EvalRun, RunAnnotation, RunSnapshot
 from db.queries import build_history_statement
-from domain.enums import RunStatus, RunType
+from domain.enums import CaseResultStatus, RunStatus, RunType
 
 
 class RunsRepository:
@@ -160,9 +160,13 @@ class RunsRepository:
     ) -> int:
         stmt = select(func.count(EvalRun.id)).where(EvalRun.project_id == project_id)
         if prompt_key is not None:
-            stmt = stmt.join(EvalRun.prompt_ref).where(EvalRun.prompt_ref.has(prompt_key=prompt_key))
+            stmt = stmt.join(EvalRun.prompt_ref).where(
+                EvalRun.prompt_ref.has(prompt_key=prompt_key)
+            )
         if dataset_name is not None:
-            stmt = stmt.join(EvalRun.dataset_ref).where(EvalRun.dataset_ref.has(dataset_name=dataset_name))
+            stmt = stmt.join(EvalRun.dataset_ref).where(
+                EvalRun.dataset_ref.has(dataset_name=dataset_name)
+            )
         if status is not None:
             stmt = stmt.where(EvalRun.status == status)
         if label is not None:
@@ -171,7 +175,9 @@ class RunsRepository:
             )
         return int((await self.session.execute(stmt)).scalar_one() or 0)
 
-    async def mark_running(self, run_db_id: str, attempt_count: int | None = None) -> None:
+    async def mark_running(
+        self, run_db_id: str, attempt_count: int | None = None
+    ) -> None:
         run = await self.get_by_db_id(run_db_id)
         if run is None:
             return
@@ -279,7 +285,7 @@ class RunsRepository:
             select(EvalCaseResult.case_index)
             .where(
                 EvalCaseResult.run_id == run_db_id,
-                EvalCaseResult.status == "failed",
+                EvalCaseResult.status == CaseResultStatus.FAILED,
             )
             .order_by(EvalCaseResult.case_index.asc())
         )

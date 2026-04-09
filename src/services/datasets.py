@@ -4,7 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.hashing import hash_dataset_cases
 from db.repositories.datasets import DatasetsRepository
-from domain.schemas import DatasetCaseInput, DatasetCaseRead, DatasetRead, DatasetReference, DatasetRegistration, RagCaseInput
+from domain.schemas import (
+    DatasetCaseInput,
+    DatasetCaseRead,
+    DatasetRead,
+    DatasetReference,
+    DatasetRegistration,
+    RagCaseInput,
+)
 from services.projects import ProjectService
 
 
@@ -95,7 +102,9 @@ class DatasetService:
         )
         return await self.register_dataset(request)
 
-    async def resolve_dataset(self, project_identifier: str, reference: DatasetReference):
+    async def resolve_dataset(
+        self, project_identifier: str, reference: DatasetReference
+    ):
         project = await self.projects.get_project_model(project_identifier)
         dataset = await self.datasets.get_by_reference(
             project_id=project.id,
@@ -112,13 +121,17 @@ class DatasetService:
 
     async def list_datasets(self, project_identifier: str) -> list[DatasetRead]:
         project = await self.projects.get_project_model(project_identifier)
-        datasets = await self.datasets.list_by_project(project_id=project.id)
-        response: list[DatasetRead] = []
-        for dataset in datasets:
-            response.append(_to_dataset_read(dataset, await self.datasets.count_cases(dataset.id)))
-        return response
+        datasets, case_counts = await self.datasets.list_by_project_with_counts(
+            project.id
+        )
+        return [
+            _to_dataset_read(dataset, case_counts.get(dataset.id, 0))
+            for dataset in datasets
+        ]
 
-    def snapshot_dataset(self, dataset, case_count: int, selected_case_indices: list[int] | None = None) -> dict:
+    def snapshot_dataset(
+        self, dataset, case_count: int, selected_case_indices: list[int] | None = None
+    ) -> dict:
         return {
             "dataset_id": dataset.id,
             "dataset_name": dataset.dataset_name,
@@ -145,4 +158,3 @@ class DatasetService:
             )
             for case in cases
         ]
-
