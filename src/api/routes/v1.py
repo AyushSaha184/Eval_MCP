@@ -44,7 +44,9 @@ async def list_projects(auth: AuthContext = Depends(require_api_key)) -> dict:
 
 
 @router.get("/projects/{project}/datasets")
-async def list_project_datasets(project: str, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def list_project_datasets(
+    project: str, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
         project_model = await AuthService(session).authorize_project(auth, project)
         items = await DatasetService(session).list_datasets(project_model.id)
@@ -52,7 +54,9 @@ async def list_project_datasets(project: str, auth: AuthContext = Depends(requir
 
 
 @router.get("/projects/{project}/prompts")
-async def list_project_prompts(project: str, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def list_project_prompts(
+    project: str, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
         project_model = await AuthService(session).authorize_project(auth, project)
         items = await PromptService(session).list_prompts(project_model.id)
@@ -60,10 +64,16 @@ async def list_project_prompts(project: str, auth: AuthContext = Depends(require
 
 
 @router.post("/datasets/register")
-async def register_dataset(request: DatasetRegistration, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def register_dataset(
+    request: DatasetRegistration, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
-        project_model = await AuthService(session).authorize_project(auth, request.project)
-        dataset = await DatasetService(session).register_dataset(request.model_copy(update={"project": project_model.id}))
+        project_model = await AuthService(session).authorize_project(
+            auth, request.project
+        )
+        dataset = await DatasetService(session).register_dataset(
+            request.model_copy(update={"project": project_model.id})
+        )
         return {
             "ok": True,
             "dataset_name": dataset.dataset_name,
@@ -73,10 +83,16 @@ async def register_dataset(request: DatasetRegistration, auth: AuthContext = Dep
 
 
 @router.post("/runs/eval")
-async def run_eval(request: RunEvalRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def run_eval(
+    request: RunEvalRequest, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
-        project_model = await AuthService(session).authorize_project(auth, request.project)
-        run = await RunService(session).run_eval_suite(request.model_copy(update={"project": project_model.id}))
+        project_model = await AuthService(session).authorize_project(
+            auth, request.project
+        )
+        run = await RunService(session).run_eval_suite(
+            request.model_copy(update={"project": project_model.id})
+        )
         return {
             "ok": True,
             "run_id": run.run_id,
@@ -88,10 +104,16 @@ async def run_eval(request: RunEvalRequest, auth: AuthContext = Depends(require_
 
 
 @router.post("/runs/rag")
-async def run_rag_eval(request: RagScoreRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def run_rag_eval(
+    request: RagScoreRequest, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
-        project_model = await AuthService(session).authorize_project(auth, request.project)
-        run = await RunService(session).score_rag_pipeline(request.model_copy(update={"project": project_model.id}))
+        project_model = await AuthService(session).authorize_project(
+            auth, request.project
+        )
+        run = await RunService(session).score_rag_pipeline(
+            request.model_copy(update={"project": project_model.id})
+        )
         return {
             "ok": True,
             "run_id": run.run_id,
@@ -103,34 +125,56 @@ async def run_rag_eval(request: RagScoreRequest, auth: AuthContext = Depends(req
 
 
 @router.get("/runs/{run_id}/status")
-async def get_run_status(run_id: str, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def get_run_status(
+    run_id: str,
+    include_suggestion: bool = False,
+    auth: AuthContext = Depends(require_api_key),
+) -> dict:
     async with session_scope() as session:
         await AuthService(session).authorize_run(auth, run_id)
-        result = await StatusService(session).get_run_status(run_id)
+        result = await StatusService(session).get_run_status(
+            run_id, include_suggestion=include_suggestion
+        )
         return {"ok": True, **result.model_dump(mode="json")}
 
 
 @router.post("/history/query")
-async def query_history(request: HistoryFilters, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def query_history(
+    request: HistoryFilters, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
-        project_model = await AuthService(session).authorize_project(auth, request.project)
-        result = await HistoryService(session).get_eval_history(request.model_copy(update={"project": project_model.id}))
+        project_model = await AuthService(session).authorize_project(
+            auth, request.project
+        )
+        result = await HistoryService(session).get_eval_history(
+            request.model_copy(update={"project": project_model.id})
+        )
         return {"ok": True, **result.model_dump(mode="json")}
 
 
 @router.post("/baselines/set")
-async def set_baseline(request: BaselineSetRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def set_baseline(
+    request: BaselineSetRequest, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
-        project_model = await AuthService(session).authorize_project(auth, request.project)
+        project_model = await AuthService(session).authorize_project(
+            auth, request.project
+        )
         await AuthService(session).authorize_run(auth, request.run_id)
-        run_id = await BaselineService(session).set_project_baseline(project_model.id, request.run_id)
+        run_id = await BaselineService(session).set_project_baseline(
+            project_model.id, request.run_id
+        )
         return {"ok": True, "project": project_model.slug, "baseline_run_id": run_id}
 
 
 @router.post("/comparisons/prompt-versions")
-async def compare_prompt_versions(request: CompareRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def compare_prompt_versions(
+    request: CompareRequest, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
-        project_model = await AuthService(session).authorize_project(auth, request.project)
+        project_model = await AuthService(session).authorize_project(
+            auth, request.project
+        )
         result = await ComparisonService(session).compare_prompt_versions(
             request.model_copy(update={"project": project_model.id})
         )
@@ -138,7 +182,9 @@ async def compare_prompt_versions(request: CompareRequest, auth: AuthContext = D
 
 
 @router.post("/regressions/detect")
-async def detect_regression(request: RegressionRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def detect_regression(
+    request: RegressionRequest, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
         auth_service = AuthService(session)
         await auth_service.authorize_run(auth, request.candidate_run_id)
@@ -146,7 +192,9 @@ async def detect_regression(request: RegressionRequest, auth: AuthContext = Depe
             await auth_service.authorize_run(auth, request.baseline_run_id)
         effective_project = request.project
         if effective_project is not None:
-            project_model = await auth_service.authorize_project(auth, effective_project)
+            project_model = await auth_service.authorize_project(
+                auth, effective_project
+            )
             effective_project = project_model.id
         result = await RegressionService(session).detect_regression(
             request.model_copy(update={"project": effective_project})
@@ -155,7 +203,9 @@ async def detect_regression(request: RegressionRequest, auth: AuthContext = Depe
 
 
 @router.post("/runs/rerun-failed")
-async def rerun_failed(request: RerunFailedRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def rerun_failed(
+    request: RerunFailedRequest, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
         await AuthService(session).authorize_run(auth, request.run_id)
         run = await RunService(session).rerun_failed_cases(request)
@@ -170,7 +220,9 @@ async def rerun_failed(request: RerunFailedRequest, auth: AuthContext = Depends(
 
 
 @router.post("/runs/annotate")
-async def annotate_run(request: AnnotationRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def annotate_run(
+    request: AnnotationRequest, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
         await AuthService(session).authorize_run(auth, request.run_id)
         annotation = await RunService(session).annotate_run(request)
@@ -178,11 +230,19 @@ async def annotate_run(request: AnnotationRequest, auth: AuthContext = Depends(r
 
 
 @router.post("/suggestions")
-async def suggest_fix(request: SuggestFixRequest, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def suggest_fix(
+    request: SuggestFixRequest, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     """Queue a suggestion evaluation run.
-    
+
     Returns immediately with a run_id for polling status, rather than
     blocking on LLM judge evaluation.
+
+    NOTE: This endpoint was changed in v1.4.0 to return RunQueued envelope
+    (with run_id, status, cached, cache_key) instead of direct suggestion data.
+    Clients expecting direct suggestion_text/summary in the response should
+    poll GET /runs/{run_id}/status with include_suggestion=true until the run
+    completes, then fetch suggestions via GET /runs/{run_id}/suggestions/latest.
     """
     async with session_scope() as session:
         await AuthService(session).authorize_run(auth, request.run_id)
@@ -191,7 +251,9 @@ async def suggest_fix(request: SuggestFixRequest, auth: AuthContext = Depends(re
 
 
 @router.get("/runs/{run_id}/suggestions/latest")
-async def get_latest_suggestion(run_id: str, auth: AuthContext = Depends(require_api_key)) -> dict:
+async def get_latest_suggestion(
+    run_id: str, auth: AuthContext = Depends(require_api_key)
+) -> dict:
     async with session_scope() as session:
         await AuthService(session).authorize_run(auth, run_id)
         suggestion = await SuggestionService(session).get_latest_for_run(run_id)
@@ -202,4 +264,7 @@ async def get_latest_suggestion(run_id: str, auth: AuthContext = Depends(require
 
 @router.get("/meta/supported-metrics")
 async def supported_metrics() -> dict:
-    return {"ok": True, **CapabilityService().get_supported_metrics().model_dump(mode="json")}
+    return {
+        "ok": True,
+        **CapabilityService().get_supported_metrics().model_dump(mode="json"),
+    }

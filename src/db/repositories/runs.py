@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import EvalCaseResult, EvalRun, RunAnnotation, RunSnapshot
@@ -50,6 +51,77 @@ class RunsRepository:
         await self.session.flush()
         await self.session.refresh(run)
         return run
+
+    async def find_or_create_inflight_run(
+        self,
+        *,
+        project_id: str,
+        cache_key: str,
+        run_type: RunType,
+        status: RunStatus,
+        trigger_source: str,
+        triggered_by: str | None,
+        metrics_requested_json: list[str],
+        total_cases: int,
+    ) -> tuple[EvalRun, bool]:
+        """Find an existing inflight run or create a new one atomically.
+
+        Returns (run, created) where created is True if a new run was created.
+        Uses row-level locking to prevent race conditions.
+        """
+        from core.ids import generate_run_id
+
+        result = await self.session.execute(
+            select(EvalRun)
+            .where(
+                EvalRun.project_id == project_id,
+                EvalRun.cache_key == cache_key,
+                EvalRun.run_type == run_type,
+                EvalRun.status == status,
+            )
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            return existing, False
+
+        new_run = EvalRun(
+            run_id=generate_run_id(),
+            project_id=project_id,
+            run_type=run_type,
+            status=status,
+            trigger_source=trigger_source,
+            triggered_by=triggered_by,
+            prompt_ref_id=None,
+            dataset_ref_id=None,
+            baseline_run_id=None,
+            metrics_requested_json=metrics_requested_json,
+            cache_key=cache_key,
+            is_cached_result=False,
+            total_cases=total_cases,
+        )
+        self.session.add(new_run)
+        try:
+            await self.session.flush()
+            await self.session.refresh(new_run)
+            return new_run, True
+        except IntegrityError:
+            await self.session.rollback()
+            result = await self.session.execute(
+                select(EvalRun)
+                .where(
+                    EvalRun.project_id == project_id,
+                    EvalRun.cache_key == cache_key,
+                    EvalRun.run_type == run_type,
+                    EvalRun.status == status,
+                )
+                .limit(1)
+            )
+            existing = result.scalar_one_or_none()
+            if existing is not None:
+                return existing, False
+            raise
 
     async def create_snapshot(
         self,
@@ -121,6 +193,7 @@ class RunsRepository:
             )
             .order_by(EvalRun.created_at.desc())
             .limit(1)
+            .with_for_update(skip_locked=True)
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
 

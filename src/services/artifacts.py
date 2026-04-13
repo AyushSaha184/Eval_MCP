@@ -25,20 +25,30 @@ class ArtifactService:
                 region=self.settings.object_storage_region,
                 endpoint_url=self.settings.object_storage_endpoint_url,
                 access_key_id=self.settings.object_storage_access_key_id,
-                secret_access_key=self.settings.object_storage_secret_access_key,
+                secret_access_key=self.settings.object_storage_access_key_secret,
             )
         return LocalArtifactStorage(self.settings.local_artifact_directory)
 
     @staticmethod
     def _build_relative_path(run_public_id: str, filename: str) -> str:
-        run_path = PurePosixPath(run_public_id.replace("\\", "/"))
-        file_path = PurePosixPath(filename.replace("\\", "/"))
-        if run_path.is_absolute() or file_path.is_absolute():
-            raise ValidationFailed("Artifact path must be relative.")
-        combined = run_path / file_path
-        if any(part == ".." for part in combined.parts):
-            raise ValidationFailed("Artifact path traversal is not allowed.")
-        return str(combined)
+        safe_id = run_public_id.replace("\\", "/").strip("/")
+        safe_filename = filename.replace("\\", "/").strip("/")
+        if not safe_id or not safe_filename:
+            raise ValidationFailed("Artifact path components cannot be empty.")
+        combined = PurePosixPath(safe_id) / PurePosixPath(safe_filename)
+        for part in combined.parts:
+            if part in (".", "..") or "\x00" in part:
+                raise ValidationFailed(
+                    "Artifact path must not contain '.', '..', or null bytes."
+                )
+        path_str = str(combined)
+        if path_str.startswith("/") or ".." in path_str.split("/"):
+            raise ValidationFailed(
+                "Artifact path must be relative and cannot escape base directory."
+            )
+        if len(path_str) > 500:
+            raise ValidationFailed("Artifact path too long.")
+        return path_str
 
     async def persist_text(
         self,
@@ -52,7 +62,9 @@ class ArtifactService:
     ):
         storage = self._get_storage()
         relative_path = self._build_relative_path(run_public_id, filename)
-        uri = await storage.write_text(relative_path=relative_path, content=content, metadata=metadata)
+        uri = await storage.write_text(
+            relative_path=relative_path, content=content, metadata=metadata
+        )
         return await self.artifacts.create(
             run_id=run_db_id,
             artifact_type=artifact_type,

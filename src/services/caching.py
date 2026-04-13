@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.hashing import build_cache_key, hash_prompt_snapshot
+from core.hashing import build_cache_key, hash_prompt_snapshot, sha256_digest
 from core.metrics_registry import get_metric_definition
 from db.models import EvalRun
 from db.repositories.runs import RunsRepository
@@ -54,6 +54,24 @@ class CachingService:
             "backend_fingerprint": backend_fingerprint,
         }
         return build_cache_key(payload)
+
+    def build_suggestion_cache_key(
+        self,
+        *,
+        referenced_run_id: str,
+        case_limit: int,
+        cluster_limit: int,
+        model_name: str,
+    ) -> str:
+        return sha256_digest(
+            {
+                "type": "suggestion",
+                "referenced_run_id": referenced_run_id,
+                "case_limit": case_limit,
+                "cluster_limit": cluster_limit,
+                "model_name": model_name,
+            }
+        )
 
     async def find_cached_run(
         self, *, project_id: str, cache_key: str, run_type: RunType

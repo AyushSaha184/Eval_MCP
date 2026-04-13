@@ -6,12 +6,30 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from core.constants import DEFAULT_CLUSTER_LIMIT, DEFAULT_PAGE_SIZE
 from core.metrics_registry import get_metric_definition
-from domain.enums import ArtifactType, MetricDirection, RunStatus, RunType, TriggerSource
+from domain.enums import (
+    ArtifactType,
+    MetricDirection,
+    RunStatus,
+    RunType,
+    TriggerSource,
+)
 from domain.types import JSONDict
 
 
 class EvalBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def _normalize_metrics_validator(metrics: list[str]) -> list[str]:
+    """Shared validator for metrics field normalization."""
+    normalized = sorted(
+        {metric.strip().lower() for metric in metrics if metric.strip()}
+    )
+    if not normalized:
+        raise ValueError("At least one metric is required.")
+    for metric in normalized:
+        get_metric_definition(metric)
+    return normalized
 
 
 class PaginationParams(EvalBaseModel):
@@ -162,7 +180,9 @@ class RunEvalRequest(EvalBaseModel):
     ad_hoc_prompt: AdHocPrompt | None = None
     dataset_reference: DatasetReference
     metrics: list[str] = Field(min_length=1)
-    model_settings: ModelConfig = Field(default_factory=ModelConfig, alias="model_config")
+    model_settings: ModelConfig = Field(
+        default_factory=ModelConfig, alias="model_config"
+    )
     runtime_config: RuntimeConfig = Field(default_factory=RuntimeConfig)
     trigger_source: TriggerSource = TriggerSource.MCP
     triggered_by: str | None = None
@@ -178,12 +198,7 @@ class RunEvalRequest(EvalBaseModel):
     @field_validator("metrics")
     @classmethod
     def normalize_metrics(cls, metrics: list[str]) -> list[str]:
-        normalized = sorted({metric.strip().lower() for metric in metrics if metric.strip()})
-        if not normalized:
-            raise ValueError("At least one metric is required.")
-        for metric in normalized:
-            get_metric_definition(metric)
-        return normalized
+        return _normalize_metrics_validator(metrics)
 
 
 class RagCaseInput(EvalBaseModel):
@@ -202,7 +217,9 @@ class RagScoreRequest(EvalBaseModel):
     ad_hoc_prompt: AdHocPrompt | None = None
     retriever_config: RetrieverConfig
     metrics: list[str] = Field(min_length=1)
-    model_settings: ModelConfig = Field(default_factory=ModelConfig, alias="model_config")
+    model_settings: ModelConfig = Field(
+        default_factory=ModelConfig, alias="model_config"
+    )
     runtime_config: RuntimeConfig = Field(default_factory=RuntimeConfig)
     trigger_source: TriggerSource = TriggerSource.MCP
     triggered_by: str | None = None
@@ -211,12 +228,7 @@ class RagScoreRequest(EvalBaseModel):
     @field_validator("metrics")
     @classmethod
     def normalize_metrics(cls, metrics: list[str]) -> list[str]:
-        normalized = sorted({metric.strip().lower() for metric in metrics if metric.strip()})
-        if not normalized:
-            raise ValueError("At least one metric is required.")
-        for metric in normalized:
-            get_metric_definition(metric)
-        return normalized
+        return _normalize_metrics_validator(metrics)
 
     @model_validator(mode="after")
     def validate_dataset_source(self) -> "RagScoreRequest":
@@ -279,7 +291,7 @@ class RunStatusResponse(EvalBaseModel):
     completed_at: datetime | None = None
     error_message: str | None = None
     is_cached_result: bool = False
-    latest_suggestion: SuggestionResponse | None = None
+    suggestion_summary: SuggestionSummary | None = None
 
 
 class HistoryFilters(PaginationParams):
@@ -305,7 +317,9 @@ class CompareRequest(EvalBaseModel):
     candidate_prompt_reference: PromptReference
     dataset_reference: DatasetReference
     metrics: list[str] = Field(min_length=1)
-    model_settings: ModelConfig = Field(default_factory=ModelConfig, alias="model_config")
+    model_settings: ModelConfig = Field(
+        default_factory=ModelConfig, alias="model_config"
+    )
     runtime_config: RuntimeConfig = Field(default_factory=RuntimeConfig)
     trigger_source: TriggerSource = TriggerSource.MCP
     triggered_by: str | None = None
@@ -314,12 +328,7 @@ class CompareRequest(EvalBaseModel):
     @field_validator("metrics")
     @classmethod
     def normalize_metrics(cls, metrics: list[str]) -> list[str]:
-        normalized = sorted({metric.strip().lower() for metric in metrics if metric.strip()})
-        if not normalized:
-            raise ValueError("At least one metric is required.")
-        for metric in normalized:
-            get_metric_definition(metric)
-        return normalized
+        return _normalize_metrics_validator(metrics)
 
 
 class MetricDelta(EvalBaseModel):
@@ -350,7 +359,13 @@ class RegressionThreshold(EvalBaseModel):
     @classmethod
     def validate_metric_name(cls, metric_name: str) -> str:
         normalized = metric_name.strip().lower()
-        get_metric_definition(normalized)
+        try:
+            get_metric_definition(normalized)
+        except (KeyError, ValueError) as e:
+            raise ValueError(
+                f"Invalid metric_name '{metric_name}': metric not found. "
+                f"Use a supported metric name."
+            ) from e
         return normalized
 
 
@@ -392,6 +407,12 @@ class SuggestFixRequest(EvalBaseModel):
     case_limit: int = Field(default=20, ge=1)
     cluster_limit: int = Field(default=DEFAULT_CLUSTER_LIMIT, ge=1)
     model_name: str | None = None
+
+
+class SuggestionSummary(EvalBaseModel):
+    id: str
+    run_id: str
+    status: str = "completed"
 
 
 class SuggestionResponse(EvalBaseModel):

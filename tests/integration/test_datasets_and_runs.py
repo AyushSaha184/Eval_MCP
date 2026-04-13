@@ -28,7 +28,14 @@ from workers.jobs import process_next_queued_run
 
 
 def _stub_judge(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _generate_suggestion(self, *, run_id: str, failure_clusters: list[dict], sample_inputs: list[str], model_name: str = "gemini-2.5-flash") -> JudgeSuggestionResult:
+    async def _generate_suggestion(
+        self,
+        *,
+        run_id: str,
+        failure_clusters: list[dict],
+        sample_inputs: list[str],
+        model_name: str = "gemini-2.5-flash",
+    ) -> JudgeSuggestionResult:
         return JudgeSuggestionResult(
             summary=f"Stub summary for {run_id}",
             suggestion_text="- Improve prompt grounding\n- Add stricter output format",
@@ -45,7 +52,9 @@ async def test_dataset_registration_and_run_snapshot_creation(test_database) -> 
         await PromptService(session).register_prompt(
             prompt_request(project.slug, prompt_key="qa", content="good prompt")
         )
-        dataset = await DatasetService(session).register_dataset(dataset_request(project.slug))
+        dataset = await DatasetService(session).register_dataset(
+            dataset_request(project.slug)
+        )
         queued_run = await RunService(session).run_eval_suite(
             run_request(project.slug, dataset.dataset_name, "qa")
         )
@@ -61,15 +70,21 @@ async def test_dataset_registration_and_run_snapshot_creation(test_database) -> 
 
 
 @pytest.mark.asyncio
-async def test_worker_execution_history_and_suggestions(test_database, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_worker_execution_history_and_suggestions(
+    test_database, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _stub_judge(monkeypatch)
 
     async with session_scope() as session:
-        project = await ProjectService(session).create_project(project_request("Execution Project"))
+        project = await ProjectService(session).create_project(
+            project_request("Execution Project")
+        )
         await PromptService(session).register_prompt(
             prompt_request(project.slug, prompt_key="qa", content="bad prompt")
         )
-        dataset = await DatasetService(session).register_dataset(dataset_request(project.slug))
+        dataset = await DatasetService(session).register_dataset(
+            dataset_request(project.slug)
+        )
         queued_run = await RunService(session).run_eval_suite(
             run_request(project.slug, dataset.dataset_name, "qa")
         )
@@ -80,9 +95,15 @@ async def test_worker_execution_history_and_suggestions(test_database, monkeypat
     async with session_scope() as session:
         status = await StatusService(session).get_run_status(queued_run.run_id)
         run_model = await RunsRepository(session).get_by_public_id(queued_run.run_id)
-        aggregate_metrics = await MetricsRepository(session).get_aggregate_metrics(run_model.id)
-        history = await HistoryService(session).get_eval_history(history_request(project.slug))
-        suggestion = await SuggestionService(session).suggest_fix(suggestion_request(queued_run.run_id))
+        aggregate_metrics = await MetricsRepository(session).get_aggregate_metrics(
+            run_model.id
+        )
+        history = await HistoryService(session).get_eval_history(
+            history_request(project.slug)
+        )
+        suggestion = await SuggestionService(session).suggest_fix(
+            suggestion_request(queued_run.run_id)
+        )
 
         assert status.status == "completed"
         assert aggregate_metrics
@@ -94,11 +115,15 @@ async def test_worker_execution_history_and_suggestions(test_database, monkeypat
 @pytest.mark.asyncio
 async def test_rerun_failed_cases_creates_subset_run(test_database) -> None:
     async with session_scope() as session:
-        project = await ProjectService(session).create_project(project_request("Rerun Project"))
+        project = await ProjectService(session).create_project(
+            project_request("Rerun Project")
+        )
         await PromptService(session).register_prompt(
             prompt_request(project.slug, prompt_key="qa", content="bad prompt")
         )
-        dataset = await DatasetService(session).register_dataset(dataset_request(project.slug))
+        dataset = await DatasetService(session).register_dataset(
+            dataset_request(project.slug)
+        )
         original = await RunService(session).run_eval_suite(
             run_request(project.slug, dataset.dataset_name, "qa")
         )
@@ -106,7 +131,9 @@ async def test_rerun_failed_cases_creates_subset_run(test_database) -> None:
     await process_next_queued_run()
 
     async with session_scope() as session:
-        rerun = await RunService(session).rerun_failed_cases(rerun_request(original.run_id))
+        rerun = await RunService(session).rerun_failed_cases(
+            rerun_request(original.run_id)
+        )
         rerun_model = await RunsRepository(session).get_by_public_id(rerun.run_id)
         snapshot = await RunsRepository(session).get_snapshot(rerun_model.id)
 
@@ -115,15 +142,21 @@ async def test_rerun_failed_cases_creates_subset_run(test_database) -> None:
 
 
 @pytest.mark.asyncio
-async def test_suggestion_eval_status_includes_latest_suggestion(test_database, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_suggestion_eval_status_includes_latest_suggestion(
+    test_database, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _stub_judge(monkeypatch)
 
     async with session_scope() as session:
-        project = await ProjectService(session).create_project(project_request("Suggestion Status Project"))
+        project = await ProjectService(session).create_project(
+            project_request("Suggestion Status Project")
+        )
         await PromptService(session).register_prompt(
             prompt_request(project.slug, prompt_key="qa", content="bad prompt")
         )
-        dataset = await DatasetService(session).register_dataset(dataset_request(project.slug))
+        dataset = await DatasetService(session).register_dataset(
+            dataset_request(project.slug)
+        )
         eval_run = await RunService(session).run_eval_suite(
             run_request(project.slug, dataset.dataset_name, "qa")
         )
@@ -131,27 +164,37 @@ async def test_suggestion_eval_status_includes_latest_suggestion(test_database, 
     await process_next_queued_run()
 
     async with session_scope() as session:
-        suggestion_run = await RunService(session).queue_suggestion(suggestion_request(eval_run.run_id))
+        suggestion_run = await RunService(session).queue_suggestion(
+            suggestion_request(eval_run.run_id)
+        )
 
     processed_run_id = await process_next_queued_run()
     assert processed_run_id == suggestion_run.run_id
 
     async with session_scope() as session:
-        status = await StatusService(session).get_run_status(suggestion_run.run_id)
+        status = await StatusService(session).get_run_status(
+            suggestion_run.run_id, include_suggestion=True
+        )
         assert status.run_type == "suggestion_eval"
         assert status.status == "completed"
-        assert status.latest_suggestion is not None
-        assert status.latest_suggestion.run_id == eval_run.run_id
+        assert status.suggestion_summary is not None
+        assert status.suggestion_summary.run_id == eval_run.run_id
 
 
 @pytest.mark.asyncio
-async def test_suggestion_queue_dedupes_for_implicit_and_explicit_default_model(test_database) -> None:
+async def test_suggestion_queue_dedupes_for_implicit_and_explicit_default_model(
+    test_database,
+) -> None:
     async with session_scope() as session:
-        project = await ProjectService(session).create_project(project_request("Suggestion Cache Project"))
+        project = await ProjectService(session).create_project(
+            project_request("Suggestion Cache Project")
+        )
         await PromptService(session).register_prompt(
             prompt_request(project.slug, prompt_key="qa", content="bad prompt")
         )
-        dataset = await DatasetService(session).register_dataset(dataset_request(project.slug))
+        dataset = await DatasetService(session).register_dataset(
+            dataset_request(project.slug)
+        )
         eval_run = await RunService(session).run_eval_suite(
             run_request(project.slug, dataset.dataset_name, "qa")
         )
@@ -168,4 +211,3 @@ async def test_suggestion_queue_dedupes_for_implicit_and_explicit_default_model(
         )
 
     assert first.run_id == second.run_id
-

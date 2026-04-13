@@ -38,17 +38,39 @@ from services.projects import ProjectService
 from services.prompts import PromptService
 
 
-def _normalize_column_key(header: str, index: int) -> str:
-    base = "".join(char.lower() if char.isalnum() else "_" for char in header).strip("_")
-    return base or f"column_{index}"
+def _normalize_column_key(
+    header: str, index: int, seen_keys: set[str] | None = None
+) -> str:
+    base = "".join(char.lower() if char.isalnum() else "_" for char in header).strip(
+        "_"
+    )
+    if not base:
+        base = f"column_{index}"
+    if seen_keys is not None:
+        if base in seen_keys:
+            base = f"{base}_{index}"
+        seen_keys.add(base)
+    return base
 
 
-def _build_table(headers: list[str], rows: list[list[object]], *, page_size: int = 10, search: bool = False) -> DataTable:
-    column_keys = [_normalize_column_key(header, index) for index, header in enumerate(headers)]
+def _build_table(
+    headers: list[str],
+    rows: list[list[object]],
+    *,
+    page_size: int = 10,
+    search: bool = False,
+) -> DataTable:
+    seen_keys: set[str] = set()
+    column_keys = [
+        _normalize_column_key(header, index, seen_keys)
+        for index, header in enumerate(headers)
+    ]
     return DataTable(
         columns=[
             DataTableColumn(key=key, header=header, sortable=index == 0)
-            for index, (key, header) in enumerate(zip(column_keys, headers, strict=True))
+            for index, (key, header) in enumerate(
+                zip(column_keys, headers, strict=True)
+            )
         ],
         rows=[
             {
@@ -72,7 +94,7 @@ def _build_card(title: str, body: object, *, description: str | None = None) -> 
         children=[
             CardHeader(children=header_children),
             CardContent(children=[body] if not isinstance(body, list) else body),
-        ]
+        ],
     )
 
 
@@ -190,15 +212,21 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                                     children=[
                                         Badge("Prefab UI active", variant="secondary"),
                                         H1("Eval_MCP Dashboard"),
-                                        P("The dashboard renderer is live. What you are seeing is the empty-state because this database has no projects yet."),
-                                        Muted("Create or seed a project, prompt, dataset, and run to light up the rest of the dashboard."),
+                                        P(
+                                            "The dashboard renderer is live. What you are seeing is the empty-state because this database has no projects yet."
+                                        ),
+                                        Muted(
+                                            "Create or seed a project, prompt, dataset, and run to light up the rest of the dashboard."
+                                        ),
                                         Div(
                                             css_class="flex flex-wrap gap-2 pt-2",
                                             children=[
                                                 Badge("FastAPI", variant="outline"),
                                                 Badge("Prefab", variant="outline"),
                                                 Badge("Postgres", variant="outline"),
-                                                Badge("Read-only view", variant="outline"),
+                                                Badge(
+                                                    "Read-only view", variant="outline"
+                                                ),
                                             ],
                                         ),
                                     ],
@@ -207,7 +235,9 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                                     "Next Step",
                                     [
                                         Text("No projects found yet."),
-                                        Muted("Once data exists, this page will expand into the full run, trend, failure, suggestion, dataset, and prompt panels."),
+                                        Muted(
+                                            "Once data exists, this page will expand into the full run, trend, failure, suggestion, dataset, and prompt panels."
+                                        ),
                                     ],
                                     description="Empty-state summary",
                                 ),
@@ -248,15 +278,32 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
         ]
 
         metric_rows: list[list[object]] = []
-        for metric_name in ("answer_correctness", "exact_match", "faithfulness", "context_precision"):
-            points = (await session.execute(build_metric_trend_statement(project_model.id, metric_name))).all()
+        for metric_name in (
+            "answer_correctness",
+            "exact_match",
+            "faithfulness",
+            "context_precision",
+        ):
+            points = (
+                await session.execute(
+                    build_metric_trend_statement(project_model.id, metric_name)
+                )
+            ).all()
             if not points:
                 continue
-            metric_rows.append([metric_name, len(points), ", ".join(f"{row.score:.2f}" for row in points[-5:])])
+            metric_rows.append(
+                [
+                    metric_name,
+                    len(points),
+                    ", ".join(f"{row.score:.2f}" for row in points[-5:]),
+                ]
+            )
 
         baseline_components: list[object] = [Muted("No project baseline configured.")]
         if project_model.default_baseline_run_id:
-            baseline_run = await session.get(EvalRun, project_model.default_baseline_run_id)
+            baseline_run = await session.get(
+                EvalRun, project_model.default_baseline_run_id
+            )
             latest_completed = (
                 await session.execute(
                     select(EvalRun)
@@ -300,7 +347,11 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                     Text(f"Baseline: {baseline_run.run_id}"),
                     Text(f"Candidate: {latest_completed.run_id}"),
                     _build_badge_row(
-                        [f"Improved: {', '.join(improved) or 'None'}", f"Regressed: {', '.join(regressed) or 'None'}", f"Unchanged: {', '.join(unchanged) or 'None'}"],
+                        [
+                            f"Improved: {', '.join(improved) or 'None'}",
+                            f"Regressed: {', '.join(regressed) or 'None'}",
+                            f"Unchanged: {', '.join(unchanged) or 'None'}",
+                        ],
                         empty_message="No baseline delta summary available.",
                     ),
                     _build_table(
@@ -331,16 +382,36 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
             )
         ).all()
 
-        suggestion_rows = (await session.execute(build_recent_suggestions_statement(project_model.id))).all()
-        latest_clusters = suggestion_rows[0][0].failure_clusters_json if suggestion_rows else []
+        suggestion_rows = (
+            await session.execute(build_recent_suggestions_statement(project_model.id))
+        ).all()
+        latest_clusters = (
+            suggestion_rows[0][0].failure_clusters_json if suggestion_rows else []
+        )
 
         summary_metrics = Div(
             css_class="grid gap-4 md:grid-cols-2 xl:grid-cols-4",
             children=[
-                Metric(label="Project", value=project_model.slug, description="Active dashboard scope"),
-                Metric(label="Prompts", value=len(prompts), description="Prompt versions tracked"),
-                Metric(label="Datasets", value=len(datasets), description="Dataset versions available"),
-                Metric(label="Runs", value=history.total, description="Historical evaluation runs"),
+                Metric(
+                    label="Project",
+                    value=project_model.slug,
+                    description="Active dashboard scope",
+                ),
+                Metric(
+                    label="Prompts",
+                    value=len(prompts),
+                    description="Prompt versions tracked",
+                ),
+                Metric(
+                    label="Datasets",
+                    value=len(datasets),
+                    description="Dataset versions available",
+                ),
+                Metric(
+                    label="Runs",
+                    value=history.total,
+                    description="Historical evaluation runs",
+                ),
             ],
         )
 
@@ -351,8 +422,12 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                     css_class="space-y-4",
                     children=[
                         H1("Eval_MCP Dashboard"),
-                        Muted("Prefab-rendered operator view for projects, runs, trends, failures, and suggestions."),
-                        _build_project_links([project.slug for project in projects], project_model.slug),
+                        Muted(
+                            "Prefab-rendered operator view for projects, runs, trends, failures, and suggestions."
+                        ),
+                        _build_project_links(
+                            [project.slug for project in projects], project_model.slug
+                        ),
                     ],
                 ),
                 summary_metrics,
@@ -372,7 +447,8 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                             "Recent Runs",
                             _build_table(
                                 ["Run", "Type", "Status", "Pass Rate", "Cases"],
-                                recent_run_rows or [["No runs recorded yet.", "", "", "", ""]],
+                                recent_run_rows
+                                or [["No runs recorded yet.", "", "", "", ""]],
                                 search=True,
                             ),
                         ),
@@ -403,7 +479,10 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                         _build_card(
                             "Failure Clusters",
                             _build_badge_row(
-                                [f"{cluster['title']} ({cluster['size']})" for cluster in latest_clusters],
+                                [
+                                    f"{cluster['title']} ({cluster['size']})"
+                                    for cluster in latest_clusters
+                                ],
                                 empty_message="No failure clusters available yet.",
                             ),
                         ),
@@ -412,7 +491,11 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                             _build_table(
                                 ["Run", "Summary", "Model"],
                                 [
-                                    [run_id, suggestion.summary[:120], suggestion.model_name]
+                                    [
+                                        run_id,
+                                        suggestion.summary[:120],
+                                        suggestion.model_name,
+                                    ]
                                     for suggestion, run_id in suggestion_rows[:10]
                                 ]
                                 or [["No suggestions generated yet.", "", ""]],
@@ -423,7 +506,11 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                             _build_table(
                                 ["Dataset", "Version", "Cases"],
                                 [
-                                    [dataset.dataset_name, dataset.version_hash[:12], dataset.case_count]
+                                    [
+                                        dataset.dataset_name,
+                                        dataset.version_hash[:12],
+                                        dataset.case_count,
+                                    ]
                                     for dataset in datasets
                                 ]
                                 or [["No datasets yet.", "", ""]],
@@ -434,7 +521,11 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                             _build_table(
                                 ["Prompt", "Version", "Created"],
                                 [
-                                    [prompt.prompt_key, prompt.version, prompt.created_at.isoformat()]
+                                    [
+                                        prompt.prompt_key,
+                                        prompt.version,
+                                        prompt.created_at.isoformat(),
+                                    ]
                                     for prompt in prompts
                                 ]
                                 or [["No prompts yet.", "", ""]],
