@@ -1,9 +1,28 @@
 from __future__ import annotations
 
-from html import escape
+from urllib.parse import quote
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from prefab_ui import PrefabApp
+from prefab_ui.components import (
+    Badge,
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+    DataTable,
+    DataTableColumn,
+    Div,
+    H1,
+    Link,
+    Metric,
+    Muted,
+    P,
+    Text,
+)
+from prefab_ui.themes import Theme
 from sqlalchemy import func, select
 
 from core.logging import setup_logging
@@ -19,56 +38,131 @@ from services.projects import ProjectService
 from services.prompts import PromptService
 
 
-def _render_table(headers: list[str], rows: list[list[str]]) -> str:
-    head_html = "".join(f"<th>{escape(header)}</th>" for header in headers)
-    body_html = "".join(
-        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
-    )
-    return f"<table><thead><tr>{head_html}</tr></thead><tbody>{body_html}</tbody></table>"
+def _normalize_column_key(header: str, index: int) -> str:
+    base = "".join(char.lower() if char.isalnum() else "_" for char in header).strip("_")
+    return base or f"column_{index}"
 
 
-def _render_layout(*, project_options: list[str], selected_project: str, sections: list[tuple[str, str]]) -> str:
-    options = "".join(
-        f"<option value='{escape(project)}' {'selected' if project == selected_project else ''}>{escape(project)}</option>"
-        for project in project_options
+def _build_table(headers: list[str], rows: list[list[object]], *, page_size: int = 10, search: bool = False) -> DataTable:
+    column_keys = [_normalize_column_key(header, index) for index, header in enumerate(headers)]
+    return DataTable(
+        columns=[
+            DataTableColumn(key=key, header=header, sortable=index == 0)
+            for index, (key, header) in enumerate(zip(column_keys, headers, strict=True))
+        ],
+        rows=[
+            {
+                key: str(row[index]) if row[index] is not None else ""
+                for index, key in enumerate(column_keys)
+            }
+            for row in rows
+        ],
+        paginated=len(rows) > page_size,
+        page_size=page_size,
+        search=search,
     )
-    section_html = "".join(
-        f"<section class='card'><h2>{escape(title)}</h2>{content}</section>" for title, content in sections
+
+
+def _build_card(title: str, body: object, *, description: str | None = None) -> Card:
+    header_children: list[object] = [CardTitle(title)]
+    if description:
+        header_children.append(CardDescription(description))
+    return Card(
+        css_class="border-white/60 bg-white/78 shadow-[0_24px_80px_rgba(10,37,64,0.08)] backdrop-blur",
+        children=[
+            CardHeader(children=header_children),
+            CardContent(children=[body] if not isinstance(body, list) else body),
+        ]
     )
-    return f"""
-    <html>
-      <head>
-        <title>Eval_MCP Dashboard</title>
-        <style>
-          body {{ font-family: 'Segoe UI', sans-serif; margin: 0; background: linear-gradient(180deg, #f7f3ea, #f2f7fb); color: #102a43; }}
-          header {{ padding: 24px 32px; background: #143642; color: white; }}
-          main {{ padding: 24px 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 18px; }}
-          .card {{ background: white; border-radius: 16px; padding: 18px; box-shadow: 0 12px 30px rgba(16, 42, 67, 0.08); }}
-          h1, h2 {{ margin-top: 0; }}
-          table {{ width: 100%; border-collapse: collapse; }}
-          th, td {{ text-align: left; padding: 8px 10px; border-bottom: 1px solid #e8eef2; vertical-align: top; }}
-          th {{ color: #486581; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }}
-          .muted {{ color: #627d98; }}
-          .pill {{ display: inline-block; padding: 4px 10px; border-radius: 999px; background: #f0f4f8; margin-right: 6px; margin-bottom: 6px; }}
-          form {{ display: flex; gap: 12px; align-items: center; margin-top: 12px; }}
-          select, button {{ padding: 8px 12px; border-radius: 10px; border: 1px solid #bcccdc; }}
-          button {{ background: #d1495b; color: white; border: none; }}
-        </style>
-      </head>
-      <body>
-        <header>
-          <h1>Eval_MCP Dashboard</h1>
-          <div class="muted">Read-only internal view for projects, runs, trends, failures, and suggestions.</div>
-          <form method="get">
-            <label for="project">Project</label>
-            <select id="project" name="project">{options}</select>
-            <button type="submit">Load</button>
-          </form>
-        </header>
-        <main>{section_html}</main>
-      </body>
-    </html>
-    """
+
+
+def _build_badge_row(items: list[str], *, empty_message: str) -> Div:
+    if not items:
+        return Div(children=[Muted(empty_message)])
+    return Div(
+        css_class="flex flex-wrap gap-2",
+        children=[Badge(item, variant="secondary") for item in items],
+    )
+
+
+def _build_project_links(project_options: list[str], selected_project: str) -> Div:
+    return Div(
+        css_class="flex flex-wrap gap-3",
+        children=[
+            Link(
+                project,
+                href=f"/?project={quote(project)}",
+                target="_self",
+                css_class=(
+                    "inline-flex items-center rounded-full border px-3 py-1 text-sm "
+                    + (
+                        "bg-primary text-primary-foreground border-primary"
+                        if project == selected_project
+                        else "bg-background text-foreground border-border hover:bg-muted"
+                    )
+                ),
+            )
+            for project in project_options
+        ],
+    )
+
+
+def _dashboard_theme() -> Theme:
+    return Theme(
+        light_css=(
+            "--background: #08131a;"
+            " --foreground: #edf7f8;"
+            " --card: rgba(11,26,33,0.82);"
+            " --card-foreground: #edf7f8;"
+            " --popover: rgba(10,20,27,0.96);"
+            " --popover-foreground: #edf7f8;"
+            " --primary: #34d399;"
+            " --primary-foreground: #06231c;"
+            " --secondary: #0f2a33;"
+            " --secondary-foreground: #d4f7ef;"
+            " --muted: #0e2028;"
+            " --muted-foreground: #8fa8b1;"
+            " --accent: #10333a;"
+            " --accent-foreground: #d4f7ef;"
+            " --border: rgba(120, 221, 195, 0.14);"
+            " --input: rgba(15,34,42,0.92);"
+            " --ring: #34d399;"
+            " --radius: 1.2rem;"
+        ),
+        css="""
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(52, 211, 153, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 24%),
+    linear-gradient(180deg, #040b10 0%, #07131a 46%, #09171d 100%);
+}
+
+.pf-app-root {
+  position: relative;
+}
+
+.pf-app-root::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 18rem;
+  height: 18rem;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.08);
+  filter: blur(40px);
+  z-index: -1;
+}
+
+a {
+  transition: all 160ms ease;
+}
+""",
+        font="Space Grotesk",
+        font_mono="IBM Plex Mono",
+        mode="dark",
+        gradient=False,
+    )
 
 
 app = FastAPI(title="Eval_MCP Dashboard", version="0.1.0")
@@ -81,7 +175,48 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
         project_service = ProjectService(session)
         projects = await project_service.list_projects()
         if not projects:
-            return HTMLResponse("<h1>Eval_MCP Dashboard</h1><p>No projects found yet.</p>")
+            empty_app = PrefabApp(
+                title="Eval_MCP Dashboard",
+                theme=_dashboard_theme(),
+                css_class="min-h-screen px-6 py-10 md:px-10",
+                view=Div(
+                    css_class="mx-auto max-w-6xl space-y-8",
+                    children=[
+                        Div(
+                            css_class="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]",
+                            children=[
+                                Div(
+                                    css_class="space-y-5 rounded-[2rem] border border-white/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.88),rgba(227,247,242,0.78))] p-8 shadow-[0_30px_120px_rgba(15,118,110,0.12)] backdrop-blur",
+                                    children=[
+                                        Badge("Prefab UI active", variant="secondary"),
+                                        H1("Eval_MCP Dashboard"),
+                                        P("The dashboard renderer is live. What you are seeing is the empty-state because this database has no projects yet."),
+                                        Muted("Create or seed a project, prompt, dataset, and run to light up the rest of the dashboard."),
+                                        Div(
+                                            css_class="flex flex-wrap gap-2 pt-2",
+                                            children=[
+                                                Badge("FastAPI", variant="outline"),
+                                                Badge("Prefab", variant="outline"),
+                                                Badge("Postgres", variant="outline"),
+                                                Badge("Read-only view", variant="outline"),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                                _build_card(
+                                    "Next Step",
+                                    [
+                                        Text("No projects found yet."),
+                                        Muted("Once data exists, this page will expand into the full run, trend, failure, suggestion, dataset, and prompt panels."),
+                                    ],
+                                    description="Empty-state summary",
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            )
+            return HTMLResponse(empty_app.html(renderer_mode="bundled"))
 
         selected_project = project or projects[0].slug
         project_model = await project_service.get_project_model(selected_project)
@@ -100,45 +235,26 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                 .order_by(EvalRun.status.asc())
             )
         ).all()
-        status_table = _render_table(
-            ["Status", "Count"],
-            [[str(status), str(count)] for status, count in status_rows],
-        )
 
-        recent_runs_table = _render_table(
-            ["Run", "Type", "Status", "Pass Rate", "Cases"],
+        recent_run_rows = [
             [
-                [
-                    escape(item.run_id),
-                    escape(str(item.run_type)),
-                    escape(str(item.status)),
-                    escape(f"{(item.pass_rate or 0.0):.2%}"),
-                    escape(f"{item.processed_cases}/{item.total_cases}"),
-                ]
-                for item in history.items
-            ],
-        )
+                item.run_id,
+                str(item.run_type),
+                str(item.status),
+                f"{(item.pass_rate or 0.0):.2%}",
+                f"{item.processed_cases}/{item.total_cases}",
+            ]
+            for item in history.items
+        ]
 
-        metric_rows = []
+        metric_rows: list[list[object]] = []
         for metric_name in ("answer_correctness", "exact_match", "faithfulness", "context_precision"):
-            points = (
-                await session.execute(build_metric_trend_statement(project_model.id, metric_name))
-            ).all()
+            points = (await session.execute(build_metric_trend_statement(project_model.id, metric_name))).all()
             if not points:
                 continue
-            metric_rows.append(
-                [
-                    escape(metric_name),
-                    escape(str(len(points))),
-                    escape(", ".join(f"{row.score:.2f}" for row in points[-5:])),
-                ]
-            )
-        metric_trends_table = _render_table(
-            ["Metric", "Points", "Latest Scores"],
-            metric_rows or [["No metric trend data yet.", "", ""]],
-        )
+            metric_rows.append([metric_name, len(points), ", ".join(f"{row.score:.2f}" for row in points[-5:])])
 
-        baseline_section = "<p class='muted'>No project baseline configured.</p>"
+        baseline_components: list[object] = [Muted("No project baseline configured.")]
         if project_model.default_baseline_run_id:
             baseline_run = await session.get(EvalRun, project_model.default_baseline_run_id)
             latest_completed = (
@@ -180,25 +296,27 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                     baseline_metrics,
                     candidate_metrics,
                 )
-                baseline_section = (
-                    f"<p><strong>Baseline:</strong> {escape(baseline_run.run_id)}<br>"
-                    f"<strong>Candidate:</strong> {escape(latest_completed.run_id)}</p>"
-                    + _render_table(
+                baseline_components = [
+                    Text(f"Baseline: {baseline_run.run_id}"),
+                    Text(f"Candidate: {latest_completed.run_id}"),
+                    _build_badge_row(
+                        [f"Improved: {', '.join(improved) or 'None'}", f"Regressed: {', '.join(regressed) or 'None'}", f"Unchanged: {', '.join(unchanged) or 'None'}"],
+                        empty_message="No baseline delta summary available.",
+                    ),
+                    _build_table(
                         ["Metric", "Baseline", "Candidate", "Delta"],
                         [
                             [
-                                escape(item.metric_name),
-                                escape(f"{item.baseline_score or 0:.3f}"),
-                                escape(f"{item.candidate_score or 0:.3f}"),
-                                escape(f"{item.delta or 0:.3f}"),
+                                item.metric_name,
+                                f"{item.baseline_score or 0:.3f}",
+                                f"{item.candidate_score or 0:.3f}",
+                                f"{item.delta or 0:.3f}",
                             ]
                             for item in deltas
                         ],
-                    )
-                    + f"<p><span class='pill'>Improved: {', '.join(improved) or 'None'}</span>"
-                    + f"<span class='pill'>Regressed: {', '.join(regressed) or 'None'}</span>"
-                    + f"<span class='pill'>Unchanged: {', '.join(unchanged) or 'None'}</span></p>"
-                )
+                        page_size=10,
+                    ),
+                ]
 
         failure_rows = (
             await session.execute(
@@ -212,83 +330,125 @@ async def dashboard(project: str | None = None) -> HTMLResponse:
                 .limit(10)
             )
         ).all()
-        failure_table = _render_table(
-            ["Run", "Case", "Input", "Reason"],
-            [
-                [
-                    escape(run_id),
-                    escape(str(case.case_index)),
-                    escape(case.input_text_snapshot[:80]),
-                    escape(case.failure_reason or "n/a"),
-                ]
-                for case, run_id in failure_rows
-            ]
-            or [["No failing cases recorded.", "", "", ""]],
-        )
 
         suggestion_rows = (await session.execute(build_recent_suggestions_statement(project_model.id))).all()
-        suggestions_table = _render_table(
-            ["Run", "Summary", "Model"],
-            [
-                [
-                    escape(run_id),
-                    escape(suggestion.summary[:120]),
-                    escape(suggestion.model_name),
-                ]
-                for suggestion, run_id in suggestion_rows[:10]
-            ]
-            or [["No suggestions generated yet.", "", ""]],
-        )
         latest_clusters = suggestion_rows[0][0].failure_clusters_json if suggestion_rows else []
-        failure_clusters_html = "".join(
-            f"<span class='pill'>{escape(cluster['title'])} ({cluster['size']})</span>" for cluster in latest_clusters
-        ) or "<p class='muted'>No failure clusters available yet.</p>"
 
-        dataset_table = _render_table(
-            ["Dataset", "Version", "Cases"],
-            [
-                [
-                    escape(dataset.dataset_name),
-                    escape(dataset.version_hash[:12]),
-                    escape(str(dataset.case_count)),
-                ]
-                for dataset in datasets
-            ],
-        )
-        prompt_table = _render_table(
-            ["Prompt", "Version", "Created"],
-            [
-                [
-                    escape(prompt.prompt_key),
-                    escape(str(prompt.version)),
-                    escape(prompt.created_at.isoformat()),
-                ]
-                for prompt in prompts
+        summary_metrics = Div(
+            css_class="grid gap-4 md:grid-cols-2 xl:grid-cols-4",
+            children=[
+                Metric(label="Project", value=project_model.slug, description="Active dashboard scope"),
+                Metric(label="Prompts", value=len(prompts), description="Prompt versions tracked"),
+                Metric(label="Datasets", value=len(datasets), description="Dataset versions available"),
+                Metric(label="Runs", value=history.total, description="Historical evaluation runs"),
             ],
         )
 
-        overview = (
-            f"<p><strong>Project:</strong> {escape(project_model.slug)}</p>"
-            f"<p><strong>Prompts:</strong> {len(prompts)}<br>"
-            f"<strong>Datasets:</strong> {len(datasets)}<br>"
-            f"<strong>Runs:</strong> {history.total}</p>"
-            + status_table
-        )
-
-        html = _render_layout(
-            project_options=[project.slug for project in projects],
-            selected_project=project_model.slug,
-            sections=[
-                ("Project Overview", overview),
-                ("Recent Runs", recent_runs_table),
-                ("Pass-Rate And Metric Trends", metric_trends_table),
-                ("Baseline vs Candidate", baseline_section),
-                ("Failure Explorer", failure_table),
-                ("Failure Clusters", failure_clusters_html),
-                ("Suggestions History", suggestions_table),
-                ("Dataset Inventory", dataset_table),
-                ("Prompt Inventory", prompt_table),
+        content = Div(
+            css_class="mx-auto max-w-7xl space-y-8",
+            children=[
+                Div(
+                    css_class="space-y-4",
+                    children=[
+                        H1("Eval_MCP Dashboard"),
+                        Muted("Prefab-rendered operator view for projects, runs, trends, failures, and suggestions."),
+                        _build_project_links([project.slug for project in projects], project_model.slug),
+                    ],
+                ),
+                summary_metrics,
+                Div(
+                    css_class="grid gap-6 xl:grid-cols-2",
+                    children=[
+                        _build_card(
+                            "Project Overview",
+                            _build_table(
+                                ["Status", "Count"],
+                                [[str(status), count] for status, count in status_rows],
+                                page_size=10,
+                            ),
+                            description=f"Selected project: {project_model.slug}",
+                        ),
+                        _build_card(
+                            "Recent Runs",
+                            _build_table(
+                                ["Run", "Type", "Status", "Pass Rate", "Cases"],
+                                recent_run_rows or [["No runs recorded yet.", "", "", "", ""]],
+                                search=True,
+                            ),
+                        ),
+                        _build_card(
+                            "Pass-Rate And Metric Trends",
+                            _build_table(
+                                ["Metric", "Points", "Latest Scores"],
+                                metric_rows or [["No metric trend data yet.", "", ""]],
+                            ),
+                        ),
+                        _build_card("Baseline vs Candidate", baseline_components),
+                        _build_card(
+                            "Failure Explorer",
+                            _build_table(
+                                ["Run", "Case", "Input", "Reason"],
+                                [
+                                    [
+                                        run_id,
+                                        case.case_index,
+                                        case.input_text_snapshot[:80],
+                                        case.failure_reason or "n/a",
+                                    ]
+                                    for case, run_id in failure_rows
+                                ]
+                                or [["No failing cases recorded.", "", "", ""]],
+                            ),
+                        ),
+                        _build_card(
+                            "Failure Clusters",
+                            _build_badge_row(
+                                [f"{cluster['title']} ({cluster['size']})" for cluster in latest_clusters],
+                                empty_message="No failure clusters available yet.",
+                            ),
+                        ),
+                        _build_card(
+                            "Suggestions History",
+                            _build_table(
+                                ["Run", "Summary", "Model"],
+                                [
+                                    [run_id, suggestion.summary[:120], suggestion.model_name]
+                                    for suggestion, run_id in suggestion_rows[:10]
+                                ]
+                                or [["No suggestions generated yet.", "", ""]],
+                            ),
+                        ),
+                        _build_card(
+                            "Dataset Inventory",
+                            _build_table(
+                                ["Dataset", "Version", "Cases"],
+                                [
+                                    [dataset.dataset_name, dataset.version_hash[:12], dataset.case_count]
+                                    for dataset in datasets
+                                ]
+                                or [["No datasets yet.", "", ""]],
+                            ),
+                        ),
+                        _build_card(
+                            "Prompt Inventory",
+                            _build_table(
+                                ["Prompt", "Version", "Created"],
+                                [
+                                    [prompt.prompt_key, prompt.version, prompt.created_at.isoformat()]
+                                    for prompt in prompts
+                                ]
+                                or [["No prompts yet.", "", ""]],
+                            ),
+                        ),
+                    ],
+                ),
             ],
         )
-        return HTMLResponse(html)
 
+        prefab_app = PrefabApp(
+            title="Eval_MCP Dashboard",
+            theme=_dashboard_theme(),
+            css_class="min-h-screen px-6 py-10 md:px-10",
+            view=content,
+        )
+        return HTMLResponse(prefab_app.html(renderer_mode="bundled"))
