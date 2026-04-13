@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.errors import NotFoundError
 from domain.enums import RunType
-from db.models import EvalRun, RunSnapshot
+from db.models import EvalRun
 from db.repositories.runs import RunsRepository
 from domain.schemas import RunStatusResponse, SuggestionSummary
 from services.suggestions import SuggestionService
@@ -26,25 +25,10 @@ class StatusService:
 
         suggestion_summary: SuggestionSummary | None = None
         if include_suggestion and run.run_type == RunType.SUGGESTION_EVAL:
-            if run.status.value in ("completed", "failed"):
-                latest = await self.suggestions.get_latest_for_run(run.id)
-                if latest is not None:
-                    suggestion_summary = SuggestionSummary(
-                        id=latest.id,
-                        run_id=latest.run_id,
-                        status="completed",
-                    )
-            else:
-                result = await self.session.execute(
-                    select(RunSnapshot.runtime_config_snapshot_json)
-                    .where(RunSnapshot.run_id == run.id)
-                    .limit(1)
-                )
-                snapshot_json = result.scalar_one_or_none()
-                referenced_run_id = (
-                    (snapshot_json or {}).get("referenced_run_id")
-                    if snapshot_json
-                    else None
+            snapshot = await self.runs.get_snapshot(run.id)
+            if snapshot and snapshot.runtime_config_snapshot_json:
+                referenced_run_id = snapshot.runtime_config_snapshot_json.get(
+                    "referenced_run_id"
                 )
                 if referenced_run_id:
                     latest = await self.suggestions.get_latest_for_run(

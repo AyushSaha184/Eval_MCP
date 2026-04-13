@@ -122,7 +122,7 @@ class DatasetService:
     async def list_datasets(self, project_identifier: str) -> list[DatasetRead]:
         project = await self.projects.get_project_model(project_identifier)
         datasets, case_counts = await self.datasets.list_by_project_with_counts(
-            project.id
+            project_id=project.id
         )
         return [
             _to_dataset_read(dataset, case_counts.get(dataset.id, 0))
