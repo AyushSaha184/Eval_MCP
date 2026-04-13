@@ -59,6 +59,15 @@ uv tool install .
 eval-mcp serve
 ```
 
+### Self-hosting
+
+To run your own backend:
+
+1. Set `EVAL_MCP_API_URL=http://your-server:8000`
+2. Set `EVAL_MCP_API_KEY=your-key`
+
+The default hosted backend is `https://eval-mcp.onrender.com`.
+
 ### Required Client Environment Variables
 
 Set this in your MCP client config or shell:
@@ -129,50 +138,14 @@ eval-mcp whoami
 
 ## MCP Client Configs
 
-### JSON MCP Config Pattern
+All MCP clients use the same `command`, `args`, and `env` values. The differences are:
+1. The config file location
+2. The top-level key (`mcpServers` vs `servers`)
+3. VS Code requires `"type": "stdio"`
 
-Cursor, Claude Desktop, Claude Code, and Antigravity use the same command, args, and env values. The main difference is the top-level key used by the client.
+### Claude Desktop
 
-Use this shared server definition:
-
-```json
-{
-  "eval-mcp": {
-    "command": "uvx",
-    "args": ["eval-mcp", "serve"],
-    "env": {
-      "EVAL_MCP_API_KEY": "key generated"
-    }
-  }
-}
-```
-
-If already installed locally:
-
-```json
-{
-  "eval-mcp": {
-    "command": "eval-mcp",
-    "args": ["serve"],
-    "env": {
-      "EVAL_MCP_API_KEY": "key generated"
-    }
-  }
-}
-```
-
-Use it in each client like this:
-
-- Cursor / Claude Desktop:
-  Put the server under `"mcpServers"` in the app's JSON MCP config.
-- VS Code:
-  Put the server under `"servers"` in `.vscode/mcp.json`, and include `"type": "stdio"`.
-- Claude Code / Claude CLI:
-  Put the server under `"mcpServers"` in `.mcp.json`.
-- Antigravity:
-  Put the server under `"mcpServers"` in its JSON MCP config.
-
-Cursor / Claude Desktop / Claude Code / Antigravity example:
+Config file: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
 
 ```json
 {
@@ -188,7 +161,51 @@ Cursor / Claude Desktop / Claude Code / Antigravity example:
 }
 ```
 
-VS Code example:
+### Claude Code / Claude CLI
+
+Config file: `.mcp.json` (project-level) or `~/.claude/mcp.json` (global)
+
+```json
+{
+  "mcpServers": {
+    "eval-mcp": {
+      "command": "uvx",
+      "args": ["eval-mcp", "serve"],
+      "env": {
+        "EVAL_MCP_API_KEY": "key generated"
+      }
+    }
+  }
+}
+```
+
+Or via CLI:
+```bash
+claude mcp add eval-mcp --scope project -- uvx eval-mcp serve
+```
+Then add the environment values in the generated config.
+
+### Cursor
+
+Config file: `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global)
+
+```json
+{
+  "mcpServers": {
+    "eval-mcp": {
+      "command": "uvx",
+      "args": ["eval-mcp", "serve"],
+      "env": {
+        "EVAL_MCP_API_KEY": "key generated"
+      }
+    }
+  }
+}
+```
+
+### VS Code
+
+Config file: `.vscode/mcp.json` (project-level) or user settings
 
 ```json
 {
@@ -205,19 +222,27 @@ VS Code example:
 }
 ```
 
-CLI setup form:
+### Antigravity
 
-```bash
-claude mcp add eval-mcp --scope project -- uvx eval-mcp serve
+Config file: Its JSON MCP config (similar to Claude Desktop)
+
+```json
+{
+  "mcpServers": {
+    "eval-mcp": {
+      "command": "uvx",
+      "args": ["eval-mcp", "serve"],
+      "env": {
+        "EVAL_MCP_API_KEY": "key generated"
+      }
+    }
+  }
+}
 ```
 
-Then add the environment values in the generated config.
+### Codex CLI
 
-### Codex CLI And Codex Extension
-
-Codex uses `~/.codex/config.toml`.
-
-Example:
+Config file: `~/.codex/config.toml`
 
 ```toml
 [mcp_servers.eval-mcp]
@@ -228,7 +253,7 @@ args = ["eval-mcp", "serve"]
 EVAL_MCP_API_KEY = "key generated"
 ```
 
-If already installed:
+If already installed locally:
 
 ```toml
 [mcp_servers.eval-mcp]
@@ -239,21 +264,23 @@ args = ["serve"]
 EVAL_MCP_API_KEY = "key generated"
 ```
 
-### Generic Rule
+### Local Installation
 
-For hosted usage, the only value that usually matters is:
+If you've installed with `uv tool install eval-mcp`, replace `uvx eval-mcp` with just `eval-mcp` in any of the above configs:
 
-- env:
-  - `EVAL_MCP_API_KEY`
-
-If you are self-hosting or overriding the default hosted backend, also set:
-
-- command: `uvx` or `eval-mcp`
-- args: `["eval-mcp", "serve"]` or `["serve"]`
-- env:
-  - `EVAL_MCP_API_URL`
-
-The default hosted backend is `https://eval-mcp.onrender.com`.
+```json
+{
+  "mcpServers": {
+    "eval-mcp": {
+      "command": "eval-mcp",
+      "args": ["serve"],
+      "env": {
+        "EVAL_MCP_API_KEY": "key generated"
+      }
+    }
+  }
+}
+```
 
 ## Troubleshooting For Normal Users
 
