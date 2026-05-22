@@ -24,6 +24,16 @@ class MCPClientSettings(BaseSettings):
     timeout_seconds: float = Field(default=30.0, alias="EVAL_MCP_TIMEOUT_SECONDS")
     default_project: str | None = Field(default=None, alias="EVAL_MCP_DEFAULT_PROJECT")
     mcp_transport: str = Field(default="stdio", alias="MCP_TRANSPORT")
+    max_concurrent_requests: int = Field(
+        default=20,
+        alias="EVAL_MCP_MAX_CONCURRENT_REQUESTS",
+        description="Maximum number of concurrent outbound API requests.",
+    )
+    max_response_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        alias="EVAL_MCP_MAX_RESPONSE_BYTES",
+        description="Maximum response body size in bytes (default 10 MiB).",
+    )
 
 
 @lru_cache(maxsize=1)

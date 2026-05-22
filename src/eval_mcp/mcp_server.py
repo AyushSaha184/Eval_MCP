@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from domain.schemas import (
     AnnotationRequest,
     BaselineSetRequest,
@@ -31,7 +33,8 @@ from eval_mcp.tool_handlers import (
     set_baseline_run as set_baseline_run_tool,
     suggest_fix as suggest_fix_tool,
 )
-from tools.common import serialize_error
+
+logger = logging.getLogger(__name__)
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -62,91 +65,90 @@ def create_mcp_server() -> FastMCP:
 mcp = create_mcp_server()
 
 
-async def _invoke(handler, *args, **kwargs):
-    try:
-        return await handler(*args, **kwargs)
-    except Exception as exc:  # pragma: no cover - exercised through e2e tests
-        return serialize_error(exc)
+# FIX(protocol): Removed the `_invoke` / `serialize_error` wrapper.
+# Exceptions now propagate naturally so FastMCP sets `isError: true` in the
+# JSON-RPC response, allowing host clients to trigger proper error recovery
+# instead of misinterpreting error payloads as successful results.
 
 
 @mcp.tool(name="register_golden_dataset")
 async def register_golden_dataset(request: DatasetRegistration) -> dict:
-    return await _invoke(register_golden_dataset_tool, request)
+    return await register_golden_dataset_tool(request)
 
 
 @mcp.tool(name="run_eval_suite")
 async def run_eval_suite(request: RunEvalRequest) -> dict:
-    return await _invoke(run_eval_suite_tool, request)
+    return await run_eval_suite_tool(request)
 
 
 @mcp.tool(name="compare_prompt_versions")
 async def compare_prompt_versions(request: CompareRequest) -> dict:
-    return await _invoke(compare_prompt_versions_tool, request)
+    return await compare_prompt_versions_tool(request)
 
 
 @mcp.tool(name="detect_regression")
 async def detect_regression(request: RegressionRequest) -> dict:
-    return await _invoke(detect_regression_tool, request)
+    return await detect_regression_tool(request)
 
 
 @mcp.tool(name="score_rag_pipeline")
 async def score_rag_pipeline(request: RagScoreRequest) -> dict:
-    return await _invoke(score_rag_pipeline_tool, request)
+    return await score_rag_pipeline_tool(request)
 
 
 @mcp.tool(name="suggest_fix")
 async def suggest_fix(request: SuggestFixRequest) -> dict:
-    return await _invoke(suggest_fix_tool, request)
+    return await suggest_fix_tool(request)
 
 
 @mcp.tool(name="get_latest_suggestion")
 async def get_latest_suggestion(run_id: str) -> dict:
-    return await _invoke(get_latest_suggestion_tool, run_id)
+    return await get_latest_suggestion_tool(run_id)
 
 
 @mcp.tool(name="get_eval_history")
 async def get_eval_history(request: HistoryFilters) -> dict:
-    return await _invoke(get_eval_history_tool, request)
+    return await get_eval_history_tool(request)
 
 
 @mcp.tool(name="get_run_status")
 async def get_run_status(run_id: str) -> dict:
-    return await _invoke(get_run_status_tool, run_id)
+    return await get_run_status_tool(run_id)
 
 
 @mcp.tool(name="list_projects")
 async def list_projects() -> dict:
-    return await _invoke(list_projects_tool)
+    return await list_projects_tool()
 
 
 @mcp.tool(name="list_datasets")
 async def list_datasets(project: str | None = None) -> dict:
-    return await _invoke(list_datasets_tool, project)
+    return await list_datasets_tool(project)
 
 
 @mcp.tool(name="list_prompts")
 async def list_prompts(project: str | None = None) -> dict:
-    return await _invoke(list_prompts_tool, project)
+    return await list_prompts_tool(project)
 
 
 @mcp.tool(name="set_baseline_run")
 async def set_baseline_run(request: BaselineSetRequest) -> dict:
-    return await _invoke(set_baseline_run_tool, request)
+    return await set_baseline_run_tool(request)
 
 
 @mcp.tool(name="rerun_failed_cases")
 async def rerun_failed_cases(request: RerunFailedRequest) -> dict:
-    return await _invoke(rerun_failed_cases_tool, request)
+    return await rerun_failed_cases_tool(request)
 
 
 @mcp.tool(name="annotate_run")
 async def annotate_run(request: AnnotationRequest) -> dict:
-    return await _invoke(annotate_run_tool, request)
+    return await annotate_run_tool(request)
 
 
 @mcp.tool(name="get_supported_metrics")
 async def get_supported_metrics() -> dict:
-    return await _invoke(get_supported_metrics_tool)
+    return await get_supported_metrics_tool()
 
 
 def run_server(*, dry_run: bool = False) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 from domain.schemas import (
@@ -14,9 +16,17 @@ from domain.schemas import (
     RunEvalRequest,
     SuggestFixRequest,
 )
-from eval_mcp.api_client import EvalMCPAPIClient, api_client
+from eval_mcp.api_client import EvalMCPAPIClient, api_client, get_shared_client
 from eval_mcp.config import get_mcp_settings
 from eval_mcp.local_config import load_local_config
+
+logger = logging.getLogger(__name__)
+
+# FIX(concurrency): Limit the number of concurrent outbound API calls.
+# Prevents resource exhaustion (OOM / CPU starvation) when many tool
+# invocations arrive in parallel from an orchestrating agent.
+_MAX_CONCURRENT_REQUESTS: int = 20
+_request_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_REQUESTS)
 
 
 def _check_api_key() -> None:
@@ -38,19 +48,29 @@ async def _dispatch(
     *,
     client: EvalMCPAPIClient | None = None,
 ) -> dict:
+    """Dispatch an API call through the shared (or injected) client.
+
+    FIX(concurrency): All dispatches acquire the semaphore so at most
+    ``_MAX_CONCURRENT_REQUESTS`` are in-flight simultaneously.
+
+    FIX(connection pooling): When no explicit client is provided, the
+    global shared client is used instead of creating a throwaway one.
+    """
     if client is None:
         _check_api_key()
+
     dispatch_client = client
     if dispatch_client is None:
-        async with api_client() as default_client:
-            return await _dispatch(method_name, payload, client=default_client)
+        # FIX(concurrency): Use the shared singleton instead of a per-call client.
+        dispatch_client = await get_shared_client()
 
-    method = getattr(dispatch_client, method_name)
-    if not payload:
-        return await method()
-    if set(payload) <= {"run_id", "project"}:
-        return await method(**payload)
-    return await method(payload)
+    async with _request_semaphore:
+        method = getattr(dispatch_client, method_name)
+        if not payload:
+            return await method()
+        if set(payload) <= {"run_id", "project"}:
+            return await method(**payload)
+        return await method(payload)
 
 
 async def register_golden_dataset(
