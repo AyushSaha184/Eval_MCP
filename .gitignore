@@ -1,28 +1,30 @@
-__pycache__/
-*.py[cod]
-.Python
-.venv/
-venv/
-ENV/
-env/
-.pytest_cache/
-pytest-cache-files-*/
-.mypy_cache/
-.ruff_cache/
-.tox/
-.test_tmp/
-.artifacts/
-file
-.env
-AGENTS.MD
-Context/
-.coverage
-coverage.xml
-htmlcov/
-dist/
-build/
-site/
-*.egg-info/
+# Go Compiled Binaries
+eval-mcp
+*.exe
+*.exe?
+*.dll
+*.so
+*.dylib
+bin/
+
+# Local Data & Database
+data/
 *.db
 *.sqlite
 *.sqlite3
+
+# Environment Files
+.env
+.env.local
+
+# Go Test Outputs
+*.out
+*.test
+c.out
+
+# IDE & OS Metadata
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

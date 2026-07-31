@@ -1,85 +1,51 @@
 services:
+  # Web API Server
   - type: web
     name: eval-mcp-api
-    env: python
-    buildCommand: pip install ".[s3]"
-    preDeployCommand: eval-mcp migrate
-    startCommand: eval-mcp api --host 0.0.0.0 --port $PORT
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: ./eval-mcp api
+    healthCheckPath: /health
     envVars:
-      - key: DATABASE_URL
+      - key: PORT
+        value: 10000
+      - key: DATA_DIR
+        value: /app/data
+      - key: GEMINI_API_KEY
         sync: false
-      - key: EVAL_MCP_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: LOG_LEVEL
-        value: INFO
-      - key: ENVIRONMENT
-        value: production
-      - key: QUEUE_BACKEND
-        value: database_polling
-      - key: WORKER_POLL_INTERVAL_SECONDS
-        value: "1.0"
-      - key: WORKER_MAX_RETRIES
-        value: "2"
-      - key: STORAGE_PROVIDER
-        value: b2
-      - key: B2_BUCKET
+      - key: ANTHROPIC_API_KEY
         sync: false
-      - key: B2_REGION
-        sync: false
-      - key: B2_ENDPOINT_URL
-        sync: false
-      - key: B2_KEY_ID
-        sync: false
-      - key: B2_APPLICATION_KEY
-        sync: false
-      - key: DEFAULT_MODEL_PROVIDER
-        value: stub
-      - key: DEFAULT_MODEL_NAME
-        value: stub-evaluator
-      - key: GOOGLE_AI_STUDIO_API_KEY
-        sync: false
-      - key: GOOGLE_API_BASE
-        value: https://generativelanguage.googleapis.com
-      - key: API_HOST
-        value: 0.0.0.0
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: eval-mcp-redis
+          property: connectionString
 
+  # Background Evaluation Worker
   - type: worker
     name: eval-mcp-worker
-    env: python
-    buildCommand: pip install ".[s3]"
-    startCommand: eval-mcp worker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: ./eval-mcp worker
     envVars:
-      - key: DATABASE_URL
+      - key: DATA_DIR
+        value: /app/data
+      - key: GEMINI_API_KEY
         sync: false
-      - key: EVAL_MCP_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: LOG_LEVEL
-        value: INFO
-      - key: ENVIRONMENT
-        value: production
-      - key: QUEUE_BACKEND
-        value: database_polling
-      - key: WORKER_POLL_INTERVAL_SECONDS
-        value: "1.0"
-      - key: WORKER_MAX_RETRIES
-        value: "2"
-      - key: STORAGE_PROVIDER
-        value: b2
-      - key: B2_BUCKET
+      - key: ANTHROPIC_API_KEY
         sync: false
-      - key: B2_REGION
-        sync: false
-      - key: B2_ENDPOINT_URL
-        sync: false
-      - key: B2_KEY_ID
-        sync: false
-      - key: B2_APPLICATION_KEY
-        sync: false
-      - key: DEFAULT_MODEL_PROVIDER
-        value: stub
-      - key: DEFAULT_MODEL_NAME
-        value: stub-evaluator
-      - key: GOOGLE_AI_STUDIO_API_KEY
-        sync: false
-      - key: GOOGLE_API_BASE
-        value: https://generativelanguage.googleapis.com
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: eval-mcp-redis
+          property: connectionString
+
+  # Redis Queue
+  - type: redis
+    name: eval-mcp-redis
+    ipAllowList: []
+    plan: free

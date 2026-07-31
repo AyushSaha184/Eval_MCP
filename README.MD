@@ -1,488 +1,177 @@
 # Eval_MCP
 
-## About
+`Eval_MCP` is a high-performance, single-binary Model Context Protocol (MCP) server for prompt evaluation and RAG pipeline scoring, built natively in **Go**.
 
-`Eval_MCP` is an installable MCP server for prompt evaluation and RAG evaluation workflows.
+---
 
-It is designed so end users can use it like Serena:
+## Key Features
 
-- install it with `uvx` or `uv tool install`
-- connect it to Claude Desktop or Cursor
-- run it as an MCP server over stdio with `eval-mcp serve`
-- let the heavy evaluation work happen in a backend platform instead of inside the MCP process
+- **Single Standalone Binary**: Compiles to a single executable (`eval-mcp`) with zero runtime dependencies.
+- **16 Native MCP Tools**: Full suite for dataset registration, prompt evaluations, RAG scoring, version comparisons, regression detection, and prompt-fix suggestions.
+- **Redis & In-Memory Queue**: Fast background job processing for concurrent evaluations.
+- **Modern Dark-Mode Dashboard**: Embedded web UI (`./eval-mcp dashboard`) with glassmorphism aesthetics, Inter/Outfit typography, live stats, and run history.
+- **Pure Go Heuristic Metrics**: Built-in scoring for Exact Match, Levenshtein Answer Correctness, Token-Overlap Hallucination & Faithfulness, Lexical Toxicity, and Context Precision/Recall.
+- **Zero Auth Overhead**: Clean local execution without user accounts, passwords, or API keys.
 
-## Table Of Contents
+---
 
-- [Install Guide](#install-guide)
-- [MCP Client Configs](#mcp-client-configs)
-- [Troubleshooting For Normal Users](#troubleshooting-for-normal-users)
-- [CLI Commands](#cli-commands)
-- [Docker](#docker)
-- [Known Simplifications](#known-simplifications)
+## Installation Guide
 
-## Install Guide
+### Prerequisites
+- [Go 1.22+](https://go.dev/dl/) installed on your machine.
 
-This section is for someone who only wants to use `Eval_MCP` inside Claude Desktop or Cursor.
+### Step 1: Clone & Build
+```bash
+# 1. Clone the repository
+git clone https://github.com/AyushSaha184/Eval_MCP.git
+cd Eval_MCP
 
-### What you need
+# 2. Build the binary
+go build -o eval-mcp ./cmd/eval-mcp
 
-- Python 3.11+
-- `uv`
-- an API key if the backend requires one
+# 3. Create your .env file
+cp .env.example .env
+```
+*(Add your `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` to `.env` if using live LLM providers).*
 
-You only need `EVAL_MCP_API_URL` if you are overriding the default hosted backend with your own deployment.
+---
 
-### Use By Installing Through Package 
+## How to Run & Use `Eval_MCP`
 
-#### Option 1: Run With `uvx`
+You can run `Eval_MCP` either **100% locally** or connected to a **Render cloud backend**.
 
-This is the simplest path.
+### Method 1: Local Mode (Full Local Setup)
+
+To run the complete evaluation stack on your local machine:
+
+1. **Seed Demo Data** *(Optional)*:
+   ```bash
+   ./eval-mcp seed
+   ```
+
+2. **Start the API Server** (Terminal 1):
+   ```bash
+   ./eval-mcp api
+   ```
+   *(Runs the REST API at `http://127.0.0.1:8000`)*
+
+3. **Start the Evaluation Worker** (Terminal 2):
+   ```bash
+   ./eval-mcp worker
+   ```
+   *(Executes background job evaluations)*
+
+4. **Start the Web Dashboard UI** *(Optional)* (Terminal 3):
+   ```bash
+   ./eval-mcp dashboard
+   ```
+   *(Open `http://localhost:8501` to view real-time pass rates & stats)*
+
+5. **Connect your AI Client** (Claude Desktop / Cursor / Antigravity):
+   Add `eval-mcp` to your MCP settings file (e.g., `~/.cursor/mcp.json` or `claude_desktop_config.json`):
+   ```json
+   {
+     "mcpServers": {
+       "eval-mcp": {
+         "command": "/absolute/path/to/Eval_MCP/eval-mcp",
+         "args": ["serve"],
+         "env": {
+           "EVAL_MCP_API_URL": "http://127.0.0.1:8000"
+         }
+       }
+     }
+   }
+   ```
+   *Your AI assistant will automatically launch `./eval-mcp serve` and have access to all 16 evaluation tools!*
+
+---
+
+### Method 2: Render Mode (Cloud Backend + Local MCP Client)
+
+If your backend API and worker are hosted on **Render**:
+
+1. **Build the binary locally**:
+   ```bash
+   go build -o eval-mcp ./cmd/eval-mcp
+   ```
+
+2. **Configure your AI Client to point to Render**:
+   In your client JSON settings (`~/.cursor/mcp.json` or `claude_desktop_config.json`), set `EVAL_MCP_API_URL` to your Render service URL:
+   ```json
+   {
+     "mcpServers": {
+       "eval-mcp": {
+         "command": "/absolute/path/to/Eval_MCP/eval-mcp",
+         "args": ["serve"],
+         "env": {
+           "EVAL_MCP_API_URL": "https://your-app-name.onrender.com"
+         }
+       }
+     }
+   }
+   ```
+   *You don't need to run `./eval-mcp api` or `./eval-mcp worker` locally. The local `./eval-mcp serve` process proxies tool calls straight to Render!*
+
+---
+
+## Deploying Your Own Backend to Render
+
+To deploy your own instance of the backend on Render:
+
+1. Fork or push the repo to your GitHub account.
+2. In the [Render Dashboard](https://dashboard.render.com), click **New** → **Blueprint**.
+3. Connect your repository. Render automatically reads [`render.yaml`](file:///home/ayush/vscode/Projects/Eval_MCP/render.yaml) and provisions:
+   - **`eval-mcp-api`** (Web Service running `./eval-mcp api`)
+   - **`eval-mcp-worker`** (Worker Service running `./eval-mcp worker`)
+   - **`eval-mcp-redis`** (Managed Redis queue)
+4. Add your API keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) under Render Environment settings.
+
+---
+
+## Supported MCP Tools (16 Tools)
+
+1. `register_golden_dataset` — Register a dataset of test cases
+2. `run_eval_suite` — Queue a prompt evaluation run over a dataset
+3. `score_rag_pipeline` — Score RAG retrieval & generation with RAG metrics
+4. `compare_prompt_versions` — Compare metric deltas between baseline and candidate prompts
+5. `detect_regression` — Detect metric regressions against project baselines
+6. `suggest_fix` — Queue LLM-as-a-judge to analyze failure clusters and suggest prompt fixes
+7. `get_latest_suggestion` — Fetch latest prompt fix suggestions for a run
+8. `get_eval_history` — Query paginated evaluation history
+9. `get_run_status` — Get status and pass rate of a run
+10. `list_projects` — List all evaluation projects
+11. `list_datasets` — List datasets in a project
+12. `list_prompts` — List prompt versions in a project
+13. `set_baseline_run` — Set default baseline run for a project
+14. `rerun_failed_cases` — Rerun failing test cases from a previous run
+15. `annotate_run` — Attach labels/notes to a run
+16. `get_supported_metrics` — List all supported evaluation metrics
+
+---
+
+## CLI Command Reference
+
+| Command | Action |
+|---|---|
+| `./eval-mcp serve` | Starts the **MCP stdio server** (called by Cursor/Claude Desktop) |
+| `./eval-mcp api` | Starts the **REST HTTP API server** (`:8000`) |
+| `./eval-mcp worker` | Starts the **background evaluation worker** |
+| `./eval-mcp dashboard` | Starts the **web dashboard UI** (`:8501`) |
+| `./eval-mcp seed` | Seeds demo projects and datasets into `./data/db.json` |
+| `./eval-mcp version` | Prints engine version (`v1.0.0`) |
+
+---
+
+## Environment Variables (.env)
 
 ```bash
-uvx eval-mcp serve
+PORT=8000
+EVAL_MCP_API_URL=http://127.0.0.1:8000
+REDIS_URL=redis://localhost:6379/0
+DATA_DIR=./data
+
+# Optional LLM Provider Keys
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
 ```
-This downloads and runs the package on demand.
-
-#### Option 2: Install It As A Tool
-
-```bash
-uv tool install eval-mcp
-eval-mcp serve
-```
-
-### Use From A Local Clone
-
-Use this if you cloned the repository and want to run the local code instead of the published package.
-
-```bash
-uv tool install .
-eval-mcp serve
-```
-
-### Self-hosting
-
-To run your own backend:
-
-1. Set `EVAL_MCP_API_URL=http://your-server:8000`
-2. Set `EVAL_MCP_API_KEY=your-key`
-
-The default hosted backend is `https://eval-mcp.onrender.com`.
-
-### Required Client Environment Variables
-
-Set this in your MCP client config or shell:
-
-```bash
-EVAL_MCP_API_KEY=your-api-key
-```
-
-Only set `EVAL_MCP_API_URL` if you are overriding the default hosted backend with your own deployment.
-
-Optional:
-
-```bash
-EVAL_MCP_TIMEOUT_SECONDS=30
-EVAL_MCP_DEFAULT_PROJECT=my-project
-
-```
-### How To Use
-
-For hosted usage, onboarding is CLI first and API-key based.
-
-#### 1. Register once
-
-```bash
-eval-mcp register --email you@example.com --password "your password" --display-name "Your Name"
-```
-
-#### 2. Create a project-scoped API key
-
-```bash
-eval-mcp create-api-key --label "name for this key"
-```
-
-If you lose your local config or raw key later, log in again to mint a fresh API key:
-
-```bash
-eval-mcp login --email you@example.com --password "your password"
-```
-
-If you want another hosted project later:
-
-```bash
-eval-mcp create-project --name "Team Project"
-eval-mcp create-api-key --project team-project --label "team-project-key"
-```
-
-#### 3. Paste the returned key into your MCP client config
-
-```json
-{
-  "mcpServers": {
-    "eval-mcp": {
-      "command": "uvx",
-      "args": ["eval-mcp", "serve"],
-      "env": {
-        "EVAL_MCP_API_KEY": "generated key"
-      }
-    }
-  }
-}
-```
-
-#### 4. Verify identity and scope
-
-```bash
-eval-mcp whoami
-```
-
-## MCP Client Configs
-
-All MCP clients use the same `command`, `args`, and `env` values. The differences are:
-1. The config file location
-2. The top-level key (`mcpServers` vs `servers`)
-3. VS Code requires `"type": "stdio"`
-
-### Claude Desktop
-
-Config file: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
-
-```json
-{
-  "mcpServers": {
-    "eval-mcp": {
-      "command": "uvx",
-      "args": ["eval-mcp", "serve"],
-      "env": {
-        "EVAL_MCP_API_KEY": "key generated"
-      }
-    }
-  }
-}
-```
-
-### Claude Code / Claude CLI
-
-Config file: `.mcp.json` (project-level) or `~/.claude/mcp.json` (global)
-
-```json
-{
-  "mcpServers": {
-    "eval-mcp": {
-      "command": "uvx",
-      "args": ["eval-mcp", "serve"],
-      "env": {
-        "EVAL_MCP_API_KEY": "key generated"
-      }
-    }
-  }
-}
-```
-
-Or via CLI:
-```bash
-claude mcp add eval-mcp --scope project -- uvx eval-mcp serve
-```
-Then add the environment values in the generated config.
-
-### Cursor
-
-Config file: `.cursor/mcp.json` (project-level) or `~/.cursor/mcp.json` (global)
-
-```json
-{
-  "mcpServers": {
-    "eval-mcp": {
-      "command": "uvx",
-      "args": ["eval-mcp", "serve"],
-      "env": {
-        "EVAL_MCP_API_KEY": "key generated"
-      }
-    }
-  }
-}
-```
-
-### VS Code
-
-Config file: `.vscode/mcp.json` (project-level) or user settings
-
-```json
-{
-  "servers": {
-    "eval-mcp": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["eval-mcp", "serve"],
-      "env": {
-        "EVAL_MCP_API_KEY": "key generated"
-      }
-    }
-  }
-}
-```
-
-### Antigravity
-
-Config file: Its JSON MCP config (similar to Claude Desktop)
-
-```json
-{
-  "mcpServers": {
-    "eval-mcp": {
-      "command": "uvx",
-      "args": ["eval-mcp", "serve"],
-      "env": {
-        "EVAL_MCP_API_KEY": "key generated"
-      }
-    }
-  }
-}
-```
-
-### Codex CLI
-
-Config file: `~/.codex/config.toml`
-
-```toml
-[mcp_servers.eval-mcp]
-command = "uvx"
-args = ["eval-mcp", "serve"]
-
-[mcp_servers.eval-mcp.env]
-EVAL_MCP_API_KEY = "key generated"
-```
-
-If already installed locally:
-
-```toml
-[mcp_servers.eval-mcp]
-command = "eval-mcp"
-args = ["serve"]
-
-[mcp_servers.eval-mcp.env]
-EVAL_MCP_API_KEY = "key generated"
-```
-
-### Local Installation
-
-If you've installed with `uv tool install eval-mcp`, replace `uvx eval-mcp` with just `eval-mcp` in any of the above configs:
-
-```json
-{
-  "mcpServers": {
-    "eval-mcp": {
-      "command": "eval-mcp",
-      "args": ["serve"],
-      "env": {
-        "EVAL_MCP_API_KEY": "key generated"
-      }
-    }
-  }
-}
-```
-
-## Troubleshooting For Normal Users
-
-### Problem: `uvx eval-mcp serve` fails
-
-Check:
-
-- `uv` is installed
-- Python 3.11+ is available
-- the package name is `eval-mcp`
-
-Try:
-
-```bash
-uv --version
-python --version
-uvx eval-mcp serve
-```
-
-### Problem: Claude Desktop / Cursor says the MCP server failed to start
-
-Check:
-
-- the command is correct
-- the args are correct
-- `EVAL_MCP_API_URL` is correct if you are overriding the default hosted backend
-- the backend URL is reachable
-
-Good:
-
-```json
-{
-  "command": "uvx",
-  "args": ["eval-mcp", "serve"]
-}
-```
-
-Or:
-
-```json
-{
-  "command": "eval-mcp",
-  "args": ["serve"]
-}
-```
-
-### Problem: the MCP server starts but tool calls fail
-
-Usually this means:
-
-- bad `EVAL_MCP_API_URL`
-- bad `EVAL_MCP_API_KEY`
-- backend API is down
-- backend worker is not running
-
-Check the backend health manually:
-
-```bash
-curl http://localhost:8000/health
-```
-
-If the backend uses an API key, confirm the same key is configured on both sides.
-
-### Problem: run gets created but stays queued
-
-That means:
-
-- the API is running
-- the worker is probably not running
-
-In self-hosted mode, make sure this process is running:
-
-```bash
-eval-mcp worker
-```
-
-### Problem: I set a Render/Postgres database but Claude still cannot use the tools
-
-Claude Desktop or Cursor should not connect to the database directly.
-
-The correct chain is:
-
-```text
-Claude Desktop / Cursor
--> eval-mcp serve
--> backend API
--> PostgreSQL + worker
-```
-
-So if the DB is configured but the backend API is not running, the MCP tools will still fail.
-
-### Problem: timeout or slow responses
-
-Try:
-
-```bash
-EVAL_MCP_TIMEOUT_SECONDS=60
-```
-
-But also check whether:
-
-- backend API is reachable
-- worker is overloaded
-- long-running jobs are expected
-
-For long evals, normal behavior is:
-
-- create run
-- get `run_id`
-- poll status later
-
-## CLI Commands
-
-Console entrypoint:
-
-```text
-eval-mcp = "eval_mcp.cli:main"
-```
-
-Supported commands:
-
-```bash
-eval-mcp serve
-eval-mcp api
-eval-mcp worker
-eval-mcp dashboard
-eval-mcp migrate
-eval-mcp register
-eval-mcp login
-eval-mcp create-api-key
-eval-mcp create-project
-eval-mcp logout
-eval-mcp whoami
-eval-mcp list-api-keys
-eval-mcp revoke-api-key <key_id>
-```
-
-Meaning:
-
-- `eval-mcp serve`
-  - starts MCP over stdio
-  - normal user command
-- `eval-mcp api`
-  - starts backend FastAPI server
-- `eval-mcp worker`
-  - starts worker loop
-- `eval-mcp dashboard`
-  - starts read-only dashboard
-- `eval-mcp migrate`
-  - runs Alembic migrations
-- `eval-mcp register`
-  - hosted registration with password
-  - creates the client account and ensures one default project
-- `eval-mcp login`
-  - verifies hosted account password
-  - creates a fresh DB-backed project-scoped API key for the default or requested project
-- `eval-mcp create-api-key`
-  - creates a DB-backed project-scoped API key
-  - prints raw key once and a ready MCP config snippet
-- `eval-mcp create-project`
-  - creates an additional hosted project for the current account
-  - intended for users who want more than the default project created at registration
-- `eval-mcp logout`
-  - clears the locally stored hosted account state
-- `eval-mcp whoami`
-  - validates configured API key and prints current scope
-- `eval-mcp list-api-keys`
-  - optional key inventory for the current account
-- `eval-mcp revoke-api-key`
-  - optional key revocation by id
-
-## Docker
-
-Docker is backend/operator-facing.
-
-Build:
-
-```bash
-docker build -t eval-mcp .
-```
-
-Run API:
-
-```bash
-docker run --env-file .env -p 8000:8000 eval-mcp eval-mcp api --host 0.0.0.0 --port 8000
-```
-
-Run worker:
-
-```bash
-docker run --env-file .env eval-mcp eval-mcp worker
-```
-
-Run dashboard:
-
-```bash
-docker run --env-file .env -p 8501:8501 eval-mcp eval-mcp dashboard --host 0.0.0.0 --port 8501
-```
-
-## Known Simplifications
-
-- `deepeval` and `ragas` still fall back to internal heuristics unless their live libraries are installed and enabled
-- Render deployment is committed, but you still need to provide real secrets and database values
-- API auth now supports key rotation, but it is still shared-secret auth rather than a full identity system
-- packaging validation is dry-run based, not a published PyPI install test
