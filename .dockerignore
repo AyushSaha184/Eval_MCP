@@ -2,13 +2,12 @@
 .gitignore
 .env
 .env.example
-# Exclude the compiled binary at project root, but NOT the cmd/eval-mcp source directory
-/eval-mcp
-!/cmd
-!/cmd/**
+eval-mcp
 data/
 *.db
 *.sqlite
 .idea/
 .vscode/
 README.MD
+!cmd/eval-mcp
+!cmd/eval-mcp/**
